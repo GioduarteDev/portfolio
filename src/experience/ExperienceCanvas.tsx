@@ -1,216 +1,122 @@
-import {
-  useEffect,
-  useRef,
-} from "react";
+import { useEffect, useRef } from "react";
 
 import * as THREE from "three";
 
 import HomeScene from "./scenes/HomeScene";
+import ProjectsScene from "./scenes/ProjectsScene";
+
 import ScrollManager from "./core/ScrollManager";
 
 function ExperienceCanvas() {
-  const containerRef =
-    useRef<HTMLDivElement>(
-      null,
-    );
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const container =
-      containerRef.current;
+    const container = containerRef.current;
 
     if (!container) return;
 
     // ===================================================
-    // HOME
+    // SCENES
     // ===================================================
 
-    const home =
-      new HomeScene();
-
-    const scene =
-      home.scene;
+    const home = new HomeScene();
+    const projects = new ProjectsScene();
 
     // ===================================================
     // CAMERA
     // ===================================================
 
-    const camera =
-      new THREE.PerspectiveCamera(
-        38,
-        container.clientWidth /
-          container.clientHeight,
-        0.1,
-        100,
-      );
-
-    camera.position.set(
-      0,
-      2.1,
-      9,
+    const camera = new THREE.PerspectiveCamera(
+      38,
+      container.clientWidth / container.clientHeight,
+      0.1,
+      100,
     );
+
+    camera.position.set(0, 2.1, 9);
 
     // ===================================================
     // CAMERA PATH
-    //
-    // Essa curva é nossa trajetória provisória.
-    // Mais tarde poderá vir do Blender.
     // ===================================================
 
-    const cameraPath =
-      new THREE.CatmullRomCurve3(
-        [
-          new THREE.Vector3(
-            0,
-            2.1,
-            9,
-          ),
-
-          new THREE.Vector3(
-            0.25,
-            2,
-            7.2,
-          ),
-
-          new THREE.Vector3(
-            -0.2,
-            1.65,
-            5.5,
-          ),
-
-          new THREE.Vector3(
-            0.15,
-            1.05,
-            4,
-          ),
-
-          new THREE.Vector3(
-            0,
-            0.45,
-            2.7,
-          ),
-
-          new THREE.Vector3(
-            0,
-            -0.25,
-            1.6,
-          ),
-
-          new THREE.Vector3(
-            0,
-            -0.9,
-            0.1,
-          ),
-        ],
-        false,
-        "catmullrom",
-        0.5,
-      );
+    const cameraPath = new THREE.CatmullRomCurve3(
+      [
+        new THREE.Vector3(0, 2.1, 9),
+        new THREE.Vector3(0.25, 2, 7.2),
+        new THREE.Vector3(-0.2, 1.65, 5.5),
+        new THREE.Vector3(0.15, 1.05, 4),
+        new THREE.Vector3(0, 0.45, 2.7),
+        new THREE.Vector3(0, -0.25, 1.6),
+        new THREE.Vector3(0, -0.9, 0.1),
+        new THREE.Vector3(0, -1.05, -5),
+        new THREE.Vector3(0, -1, -12),
+        new THREE.Vector3(0, -0.9, -20),
+      ],
+      false,
+      "catmullrom",
+      0.5,
+    );
 
     // ===================================================
     // LOOK AT PATH
-    //
-    // Para onde a câmera olha
-    // enquanto viaja.
     // ===================================================
 
-    const lookAtPath =
-      new THREE.CatmullRomCurve3(
-        [
-          new THREE.Vector3(
-            0,
-            1,
-            0,
-          ),
-
-          new THREE.Vector3(
-            0,
-            0.95,
-            -1,
-          ),
-
-          new THREE.Vector3(
-            0,
-            0.75,
-            -2,
-          ),
-
-          new THREE.Vector3(
-            0,
-            0.4,
-            -3,
-          ),
-
-          new THREE.Vector3(
-            0,
-            0,
-            -4,
-          ),
-
-          new THREE.Vector3(
-            0,
-            -0.5,
-            -5,
-          ),
-
-          new THREE.Vector3(
-            0,
-            -1,
-            -6,
-          ),
-        ],
-        false,
-        "catmullrom",
-        0.5,
-      );
+    const lookAtPath = new THREE.CatmullRomCurve3(
+      [
+        new THREE.Vector3(0, 1, 0),
+        new THREE.Vector3(0, 0.95, -1),
+        new THREE.Vector3(0, 0.75, -2),
+        new THREE.Vector3(0, 0.4, -3),
+        new THREE.Vector3(0, 0, -4),
+        new THREE.Vector3(0, -0.5, -5),
+        new THREE.Vector3(0, -1, -7),
+        new THREE.Vector3(0, -1, -11),
+        new THREE.Vector3(0, -1, -18),
+        new THREE.Vector3(0, -1, -27),
+      ],
+      false,
+      "catmullrom",
+      0.5,
+    );
 
     // ===================================================
     // RENDERER
     // ===================================================
 
-    const renderer =
-      new THREE.WebGLRenderer({
-        antialias: true,
-        powerPreference:
-          "high-performance",
-      });
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      powerPreference: "high-performance",
+    });
 
     renderer.setSize(
       container.clientWidth,
       container.clientHeight,
     );
 
-    renderer.setPixelRatio(
-      Math.min(
-        window.devicePixelRatio,
-        2,
-      ),
+    const initialPixelRatio = Math.min(
+      window.devicePixelRatio,
+      2,
     );
 
-    renderer.outputColorSpace =
-      THREE.SRGBColorSpace;
+    renderer.setPixelRatio(initialPixelRatio);
 
-    renderer.toneMapping =
-      THREE.ACESFilmicToneMapping;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-    renderer.toneMappingExposure =
-      1;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
-    renderer.shadowMap.enabled =
-      true;
+    renderer.toneMappingExposure = 1;
 
-    renderer.shadowMap.type =
-      THREE.PCFSoftShadowMap;
+    renderer.shadowMap.enabled = true;
 
-    container.appendChild(
-      renderer.domElement,
-    );
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    container.appendChild(renderer.domElement);
 
     // ===================================================
-    // VIRTUAL SCROLL
+    // SCROLL
     // ===================================================
 
-    const scroll =
-      new ScrollManager();
+    const scroll = new ScrollManager();
 
     // ===================================================
     // POINTER
@@ -219,27 +125,16 @@ function ExperienceCanvas() {
     const pointer = {
       x: 0,
       y: 0,
-
       targetX: 0,
       targetY: 0,
     };
 
-    const handlePointerMove = (
-      event: PointerEvent,
-    ) => {
+    const handlePointerMove = (event: PointerEvent) => {
       pointer.targetX =
-        (
-          event.clientX /
-          window.innerWidth -
-          0.5
-        ) * 2;
+        (event.clientX / window.innerWidth - 0.5) * 2;
 
       pointer.targetY =
-        (
-          event.clientY /
-          window.innerHeight -
-          0.5
-        ) * 2;
+        (event.clientY / window.innerHeight - 0.5) * 2;
     };
 
     window.addEventListener(
@@ -248,22 +143,19 @@ function ExperienceCanvas() {
     );
 
     // ===================================================
-    // CLICK & HOLD
+    // HOLD
     // ===================================================
 
     let holding = false;
-
     let holdProgress = 0;
 
-    const handlePointerDown =
-      () => {
-        holding = true;
-      };
+    const handlePointerDown = () => {
+      holding = true;
+    };
 
-    const handlePointerUp =
-      () => {
-        holding = false;
-      };
+    const handlePointerUp = () => {
+      holding = false;
+    };
 
     window.addEventListener(
       "pointerdown",
@@ -279,58 +171,48 @@ function ExperienceCanvas() {
     // REUSABLE VECTORS
     // ===================================================
 
-    const desiredPosition =
-      new THREE.Vector3();
+    const desiredPosition = new THREE.Vector3();
 
-    const desiredLookAt =
-      new THREE.Vector3();
+    const desiredLookAt = new THREE.Vector3();
 
-    const currentLookAt =
-      new THREE.Vector3(
-        0,
-        1,
-        0,
-      );
+    const currentLookAt = new THREE.Vector3(
+      0,
+      1,
+      0,
+    );
 
     // ===================================================
     // CLOCK
     // ===================================================
 
-    const clock =
-      new THREE.Clock();
+    const clock = new THREE.Clock();
 
     let animationFrame = 0;
 
     // ===================================================
-    // ANIMATION
+    // ANIMATION LOOP
     // ===================================================
 
     const animate = () => {
-      const elapsed =
-        clock.getElapsedTime();
+      const elapsed = clock.getElapsedTime();
 
       // -----------------------------------------------
-      // SMOOTH POINTER
+      // POINTER SMOOTH
       // -----------------------------------------------
 
       pointer.x +=
-        (
-          pointer.targetX -
-          pointer.x
-        ) * 0.035;
+        (pointer.targetX - pointer.x) *
+        0.035;
 
       pointer.y +=
-        (
-          pointer.targetY -
-          pointer.y
-        ) * 0.035;
+        (pointer.targetY - pointer.y) *
+        0.035;
 
       // -----------------------------------------------
-      // VIRTUAL SCROLL
+      // SCROLL
       // -----------------------------------------------
 
-      const progress =
-        scroll.update();
+      const progress = scroll.update();
 
       // -----------------------------------------------
       // CAMERA PATH
@@ -348,14 +230,10 @@ function ExperienceCanvas() {
 
       // -----------------------------------------------
       // PARALLAX
-      //
-      // Quanto mais fundo,
-      // menor o movimento lateral.
       // -----------------------------------------------
 
       const parallaxStrength =
-        1 -
-        progress * 0.6;
+        1 - progress * 0.72;
 
       desiredPosition.x +=
         pointer.x *
@@ -368,20 +246,19 @@ function ExperienceCanvas() {
         parallaxStrength;
 
       // -----------------------------------------------
-      // CLICK & HOLD
+      // HOLD
       // -----------------------------------------------
 
       holdProgress +=
-        (
-          (holding ? 1 : 0) -
-          holdProgress
-        ) * 0.055;
+        ((holding ? 1 : 0) -
+          holdProgress) *
+        0.055;
 
       desiredPosition.z -=
         holdProgress * 0.45;
 
       // -----------------------------------------------
-      // CAMERA SMOOTHING
+      // CAMERA SMOOTH
       // -----------------------------------------------
 
       camera.position.lerp(
@@ -394,28 +271,44 @@ function ExperienceCanvas() {
         0.07,
       );
 
-      camera.lookAt(
-        currentLookAt,
-      );
-
-      // -----------------------------------------------
-      // FIELD OF VIEW
-      // -----------------------------------------------
+      camera.lookAt(currentLookAt);
 
       const targetFov =
-        38 -
-        holdProgress * 3;
+        38 - holdProgress * 3;
 
       camera.fov +=
-        (
-          targetFov -
-          camera.fov
-        ) * 0.05;
+        (targetFov -
+          camera.fov) *
+        0.05;
 
       camera.updateProjectionMatrix();
 
+      // =================================================
+      // TRANSITION HOME → PROJECTS
+      // =================================================
+
+      const transitionStart = 0.36;
+      const transitionEnd = 0.58;
+
+      const transitionProgress =
+        THREE.MathUtils.clamp(
+          (progress - transitionStart) /
+            (transitionEnd -
+              transitionStart),
+          0,
+          1,
+        );
+
+      const projectProgress =
+        THREE.MathUtils.clamp(
+          (progress - transitionEnd) /
+            (1 - transitionEnd),
+          0,
+          1,
+        );
+
       // -----------------------------------------------
-      // UPDATE HOME
+      // UPDATE SCENES
       // -----------------------------------------------
 
       home.update(
@@ -425,12 +318,20 @@ function ExperienceCanvas() {
         holding,
       );
 
+      projects.update(
+        elapsed,
+        projectProgress,
+        scroll.velocity,
+      );
+
       // -----------------------------------------------
-      // RENDER
+      // FINAL RENDER
       // -----------------------------------------------
 
       renderer.render(
-        scene,
+        transitionProgress < 0.5
+          ? home.scene
+          : projects.scene,
         camera,
       );
 
@@ -446,31 +347,34 @@ function ExperienceCanvas() {
     // RESIZE
     // ===================================================
 
-    const handleResize =
-      () => {
-        const width =
-          container.clientWidth;
+    const handleResize = () => {
+      const width =
+        container.clientWidth;
 
-        const height =
-          container.clientHeight;
+      const height =
+        container.clientHeight;
 
-        camera.aspect =
-          width / height;
-
-        camera.updateProjectionMatrix();
-
-        renderer.setSize(
-          width,
-          height,
+      const pixelRatio =
+        Math.min(
+          window.devicePixelRatio,
+          2,
         );
 
-        renderer.setPixelRatio(
-          Math.min(
-            window.devicePixelRatio,
-            2,
-          ),
-        );
-      };
+      camera.aspect =
+        width / height;
+
+      camera.updateProjectionMatrix();
+
+      renderer.setSize(
+        width,
+        height,
+      );
+
+      renderer.setPixelRatio(
+        pixelRatio,
+      );
+
+    };
 
     window.addEventListener(
       "resize",
@@ -509,7 +413,7 @@ function ExperienceCanvas() {
       scroll.dispose();
 
       home.dispose();
-
+      projects.dispose();
       renderer.dispose();
 
       if (
