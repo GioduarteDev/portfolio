@@ -49,7 +49,7 @@ void main() {
     waveA +
     waveB +
     mouseRipple *
-    interactionStrength;
+      interactionStrength;
 
   newPosition.z += elevation;
 

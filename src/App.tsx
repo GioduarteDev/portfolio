@@ -1,28 +1,50 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
 import gsap from "gsap";
+
 import "./index.css";
+
 import ExperienceCanvas from "./experience/ExperienceCanvas";
 
-type Screen = "loader" | "intro" | "home";
+type Screen =
+  | "loader"
+  | "intro"
+  | "home";
 
 function App() {
-  const [screen, setScreen] = useState<Screen>("loader");
-  const [audioEnabled, setAudioEnabled] = useState(false);
+  const [screen, setScreen] =
+    useState<Screen>("loader");
 
-  const loaderRef = useRef<HTMLElement>(null);
-  const lettersRef = useRef<HTMLDivElement>(null);
-  const loadingRef = useRef<HTMLDivElement>(null);
+  const [
+    audioEnabled,
+    setAudioEnabled,
+  ] = useState(false);
+
+  const loaderRef =
+    useRef<HTMLElement>(null);
+
+  const lettersRef =
+    useRef<HTMLDivElement>(null);
+
+  const loadingRef =
+    useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (screen !== "loader") return;
 
-    const letters = lettersRef.current?.children;
+    const letters =
+      lettersRef.current?.children;
 
-    const timeline = gsap.timeline({
-      onComplete: () => {
-        setScreen("intro");
-      },
-    });
+    const timeline =
+      gsap.timeline({
+        onComplete: () => {
+          setScreen("intro");
+        },
+      });
 
     if (letters) {
       timeline.fromTo(
@@ -53,7 +75,12 @@ function App() {
         },
         "-=0.3",
       )
-      .to({}, { duration: 1 })
+      .to(
+        {},
+        {
+          duration: 1,
+        },
+      )
       .to(loaderRef.current, {
         opacity: 0,
         duration: 0.7,
@@ -65,16 +92,24 @@ function App() {
     };
   }, [screen]);
 
-  function enterSite(withAudio: boolean) {
+  function enterSite(
+    withAudio: boolean,
+  ) {
     setAudioEnabled(withAudio);
     setScreen("home");
   }
 
   return (
     <main className="site">
-      {/* LOADER */}
+      {/* =========================
+          LOADER
+      ========================== */}
+
       {screen === "loader" && (
-        <section ref={loaderRef} className="loader">
+        <section
+          ref={loaderRef}
+          className="loader"
+        >
           <div
             ref={lettersRef}
             className="unseen-mark unseen-mark--loader"
@@ -88,13 +123,19 @@ function App() {
             <span>N</span>
           </div>
 
-          <div ref={loadingRef} className="loader__status">
+          <div
+            ref={loadingRef}
+            className="loader__status"
+          >
             (Loading)
           </div>
         </section>
       )}
 
-      {/* INTRO */}
+      {/* =========================
+          INTRO
+      ========================== */}
+
       {screen === "intro" && (
         <section className="intro">
           <div
@@ -110,21 +151,30 @@ function App() {
           </div>
 
           <div className="intro__content">
-            <p className="intro__name">Unseen Studio®</p>
+            <p className="intro__name">
+              Unseen Studio®
+            </p>
 
             <p className="intro__description">
-              A brand, digital and motion studio creating
+              A brand, digital and
+              motion studio creating
               <br />
-              refreshingly unexpected ideas and striking visuals
+
+              refreshingly unexpected
+              ideas and striking visuals
               <br />
-              that help bold brands cut through the noise.
+
+              that help bold brands cut
+              through the noise.
             </p>
 
             <div className="intro__actions">
               <button
                 type="button"
                 className="text-button"
-                onClick={() => enterSite(true)}
+                onClick={() =>
+                  enterSite(true)
+                }
               >
                 Enter
               </button>
@@ -132,7 +182,9 @@ function App() {
               <button
                 type="button"
                 className="text-button"
-                onClick={() => enterSite(false)}
+                onClick={() =>
+                  enterSite(false)
+                }
               >
                 Enter without audio
               </button>
@@ -141,26 +193,138 @@ function App() {
         </section>
       )}
 
-      {/* HOME / WEBGL */}
+      {/* =========================
+          EXPERIENCE
+      ========================== */}
+
       {screen === "home" && (
-        <section className="home-placeholder">
+        <section
+          className="home-placeholder"
+          data-scene="home"
+        >
           <ExperienceCanvas />
 
-          <header className="header">
-            <div>Unseen Studio®</div>
+          {/* GLOBAL INTERFACE */}
 
-            <button type="button" className="text-button">
-              Toggle Menu
-            </button>
-          </header>
+          <div className="global-interface">
+            <header className="experience-header">
+              <button
+                type="button"
+                className="ui-link"
+              >
+                Toggle Menu
+              </button>
 
-          <p className="home-placeholder__drag">
-            Drag to explore our world
-          </p>
+              <div className="experience-header__contact">
+                <span>
+                  ⮡ projects@unseen.co
+                </span>
 
-          <div className="home-placeholder__controls">
-            <span>Click &amp; Hold</span>
-            <span>{audioEnabled ? "Sound On" : "Sound Off"}</span>
+                <span>
+                  ⮡ (+44) 0117 922
+                  6892
+                </span>
+              </div>
+            </header>
+
+            <div className="experience-controls">
+              <span>
+                Click &amp; Hold
+              </span>
+
+              <button
+                type="button"
+                className="ui-link"
+                onClick={() =>
+                  setAudioEnabled(
+                    (current) =>
+                      !current,
+                  )
+                }
+              >
+                {audioEnabled
+                  ? "Sound On"
+                  : "Toggle Sound"}
+              </button>
+            </div>
+          </div>
+
+          {/* HOME INTERFACE */}
+
+          <div className="home-interface">
+            <h1 className="scene-title">
+              Home
+            </h1>
+
+            <p className="scene-instruction">
+              Drag to explore our world
+            </p>
+          </div>
+
+          {/* PROJECTS INTERFACE */}
+
+          <div className="projects-interface">
+            <div className="projects-interface__intro">
+              <h1 className="scene-title">
+                Projects
+              </h1>
+
+              <div className="projects-interface__contact">
+                <p>
+                  Looking for a creative
+                  partner for your project?
+                </p>
+
+                <a
+                  href="mailto:projects@unseen.co"
+                >
+                  projects@unseen.co
+                </a>
+              </div>
+            </div>
+
+            <div className="projects-filter">
+              <span className="projects-filter__label">
+                Filter
+              </span>
+
+              <div className="projects-filter__options">
+                <button
+                  type="button"
+                  className="project-filter project-filter--active"
+                >
+                  All
+                </button>
+
+                <button
+                  type="button"
+                  className="project-filter"
+                >
+                  Branding
+                </button>
+
+                <button
+                  type="button"
+                  className="project-filter"
+                >
+                  Digital
+                </button>
+
+                <button
+                  type="button"
+                  className="project-filter"
+                >
+                  Motion
+                </button>
+
+                <button
+                  type="button"
+                  className="project-filter"
+                >
+                  Experiment
+                </button>
+              </div>
+            </div>
           </div>
         </section>
       )}
