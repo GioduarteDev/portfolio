@@ -34,7 +34,9 @@ function App() {
     useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (screen !== "loader") return;
+    if (screen !== "loader") {
+      return;
+    }
 
     const letters =
       lettersRef.current?.children;
@@ -81,11 +83,14 @@ function App() {
           duration: 1,
         },
       )
-      .to(loaderRef.current, {
-        opacity: 0,
-        duration: 0.7,
-        ease: "power2.inOut",
-      });
+      .to(
+        loaderRef.current,
+        {
+          opacity: 0,
+          duration: 0.7,
+          ease: "power2.inOut",
+        },
+      );
 
     return () => {
       timeline.kill();
@@ -156,16 +161,11 @@ function App() {
             </p>
 
             <p className="intro__description">
-              A brand, digital and
-              motion studio creating
-              <br />
-
-              refreshingly unexpected
-              ideas and striking visuals
-              <br />
-
-              that help bold brands cut
-              through the noise.
+              A brand, digital and motion
+              studio creating refreshingly
+              unexpected ideas and striking
+              visuals that help bold brands
+              cut through the noise.
             </p>
 
             <div className="intro__actions">
@@ -221,8 +221,7 @@ function App() {
                 </span>
 
                 <span>
-                  ⮡ (+44) 0117 922
-                  6892
+                  ⮡ (+44) 0117 922 6892
                 </span>
               </div>
             </header>
@@ -275,9 +274,7 @@ function App() {
                   partner for your project?
                 </p>
 
-                <a
-                  href="mailto:projects@unseen.co"
-                >
+                <a href="mailto:projects@unseen.co">
                   projects@unseen.co
                 </a>
               </div>

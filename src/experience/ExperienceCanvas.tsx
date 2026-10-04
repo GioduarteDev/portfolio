@@ -547,10 +547,23 @@ function ExperienceCanvas() {
       // FIELD OF VIEW
       // -----------------------------------------------
 
-      const targetFov =
-        38 -
-        holdProgress *
-          3;
+      const projectsFovProgress =
+  THREE.MathUtils.smoothstep(
+    progress,
+    0.52,
+    0.72,
+  );
+
+const baseFov =
+  THREE.MathUtils.lerp(
+    38,
+    43,
+    projectsFovProgress,
+  );
+
+const targetFov =
+  baseFov -
+  holdProgress * 3;
 
       camera.fov +=
         (
