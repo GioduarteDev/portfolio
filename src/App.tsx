@@ -8,7 +8,6 @@ import {
 
 import gsap from "gsap";
 
-import "./index.css";
 
 import ExperienceCanvas from "./experience/ExperienceCanvas";
 import type {
@@ -548,7 +547,7 @@ function App() {
         <section className="intro" data-testid="visual-intro">
           <div
             className="unseen-mark unseen-mark--intro"
-            aria-label="Unseen"
+            aria-label="Giovanna Duarte Portfolio"
             role="img"
           >
             <span>U</span>
@@ -561,15 +560,11 @@ function App() {
 
           <div className="intro__content">
             <p className="intro__name">
-              Unseen Studio®
+              Giovanna Duarte
             </p>
 
             <p className="intro__description">
-              A brand, digital and motion
-              studio creating refreshingly
-              unexpected ideas and striking
-              visuals that help bold brands
-              cut through the noise.
+              Engenharia de software, design e experiências digitais construídas entre tecnologia, movimento, água e imaginação.
             </p>
 
             <div className="intro__actions">
@@ -644,14 +639,14 @@ function App() {
               </button>
 
               <div className="experience-header__contact">
-                <span>
-                  ⮡ projects@unseen.co
-                </span>
+        <span>
+          ⮡ Giovanna Duarte
+      </span>
 
-                <span>
-                  ⮡ (+44) 0117 922 6892
-                </span>
-              </div>
+        <span>
+      ⮡ Brasília · Brasil
+  </span>
+</div>
             </header>
 
             <div className="experience-controls">
@@ -806,7 +801,7 @@ function App() {
             <div className="experience-menu__backdrop" />
             <div className="experience-menu__panel">
               <div className="experience-menu__topline">
-                <span>UNSEEN STUDIO®</span>
+                <span><span>GIOVANNA DUARTE®</span></span>
                 <button
                   type="button"
                   className="experience-menu__close"
@@ -846,7 +841,7 @@ function App() {
               </nav>
 
               <p className="experience-menu__footer">
-                Bristol · United Kingdom
+                Brasília · Brasil
               </p>
             </div>
           </div>
@@ -859,7 +854,7 @@ function App() {
               aria-labelledby="section-overlay-title"
             >
               <div className="section-overlay__topline">
-                <span>UNSEEN STUDIO®</span>
+                <span>Giovanna Duarte®</span>
                 <button
                   ref={overlayCloseRef}
                   type="button"
@@ -891,7 +886,7 @@ function App() {
                     (+44) 0117 922 6892
                   </a>
                   <p className="section-overlay__address">
-                    Bristol · United Kingdom
+                    Brasília · Brasil
                   </p>
                 </div>
               ) : (
