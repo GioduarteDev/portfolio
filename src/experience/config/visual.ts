@@ -10,12 +10,12 @@
 export const HOME_CAMERA_FOV = 38;
 export const HOME_CAMERA_NEAR = 0.1;
 export const HOME_CAMERA_FAR = 100;
-export const HOME_CAMERA_START = [0, 2.1, 9] as const;
+export const HOME_CAMERA_START = [0, 2.65, 9] as const;
 
-export const HOME_BACKGROUND = "#c8b0bd";
-export const HOME_FOG_COLOR = "#d7c1c7";
-export const HOME_FOG_NEAR = 22;
-export const HOME_FOG_FAR = 58;
+export const HOME_BACKGROUND = "#e3c6c6";
+export const HOME_FOG_COLOR = "#e5d6da";
+export const HOME_FOG_NEAR = 30;
+export const HOME_FOG_FAR = 78;
 
 export const HOME_PARALLAX_X = 0.55;
 export const HOME_PARALLAX_Y = 0.28;

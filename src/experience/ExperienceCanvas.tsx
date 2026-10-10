@@ -239,145 +239,29 @@ const ExperienceCanvas = forwardRef<
     // HOME CAMERA PATH
     // ===================================================
 
-    const cameraPath =
-      new THREE.CatmullRomCurve3(
-        [
-          new THREE.Vector3(
-            0,
-            2.1,
-            9,
-          ),
+    // The existing scroll controller samples 0..0.58 of this curve.
+    // Keep its entire visible segment above the water (y = 0.16).
+    const cameraPath = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 2.65, 9),
+      new THREE.Vector3(0.15, 2.1, 7.5),
+      new THREE.Vector3(-0.12, 1.35, 5.8),
+      new THREE.Vector3(0.08, 0.72, 4.8),
+      new THREE.Vector3(0, 0.56, 3.8),
+      new THREE.Vector3(0, 0.46, 2),
+      new THREE.Vector3(0, 0.4, 0),
+      new THREE.Vector3(0, 0.4, -3),
+    ], false, "catmullrom", 0.5);
 
-          new THREE.Vector3(
-            0.25,
-            2,
-            7.2,
-          ),
-
-          new THREE.Vector3(
-            -0.2,
-            1.65,
-            5.5,
-          ),
-
-          new THREE.Vector3(
-            0.15,
-            1.05,
-            4,
-          ),
-
-          new THREE.Vector3(
-            0,
-            0.45,
-            2.7,
-          ),
-
-          new THREE.Vector3(
-            0,
-            -0.25,
-            1.6,
-          ),
-
-          new THREE.Vector3(
-            0,
-            -0.9,
-            0.1,
-          ),
-
-          new THREE.Vector3(
-            0,
-            -1.05,
-            -5,
-          ),
-
-          new THREE.Vector3(
-            0,
-            -1,
-            -12,
-          ),
-
-          new THREE.Vector3(
-            0,
-            -0.9,
-            -20,
-          ),
-        ],
-        false,
-        "catmullrom",
-        0.5,
-      );
-
-    // ===================================================
-    // LOOK AT PATH
-    // ===================================================
-
-    const lookAtPath =
-      new THREE.CatmullRomCurve3(
-        [
-          new THREE.Vector3(
-            0,
-            1,
-            0,
-          ),
-
-          new THREE.Vector3(
-            0,
-            0.95,
-            -1,
-          ),
-
-          new THREE.Vector3(
-            0,
-            0.75,
-            -2,
-          ),
-
-          new THREE.Vector3(
-            0,
-            0.4,
-            -3,
-          ),
-
-          new THREE.Vector3(
-            0,
-            0,
-            -4,
-          ),
-
-          new THREE.Vector3(
-            0,
-            -0.5,
-            -5,
-          ),
-
-          new THREE.Vector3(
-            0,
-            -1,
-            -7,
-          ),
-
-          new THREE.Vector3(
-            0,
-            -1,
-            -11,
-          ),
-
-          new THREE.Vector3(
-            0,
-            -1,
-            -18,
-          ),
-
-          new THREE.Vector3(
-            0,
-            -1,
-            -27,
-          ),
-        ],
-        false,
-        "catmullrom",
-        0.5,
-      );
+    const lookAtPath = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 1.2, -14),
+      new THREE.Vector3(0, 0.5, -15),
+      new THREE.Vector3(0, 0.25, -17),
+      new THREE.Vector3(0, 0.2, -18),
+      new THREE.Vector3(0, 0.2, -19),
+      new THREE.Vector3(0, 0.18, -20),
+      new THREE.Vector3(0, 0.18, -21),
+      new THREE.Vector3(0, 0.18, -24),
+    ], false, "catmullrom", 0.5);
 
     // ===================================================
     // ===================================================

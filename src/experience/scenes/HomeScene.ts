@@ -1,25 +1,11 @@
 import * as THREE from "three";
 import { createShellArchitecture } from "../home/createShellArchitecture";
+import { createDawnBackdrop } from "../home/createDawnBackdrop";
 
 import waterVertexShader from "../shaders/waterVertex";
 import waterFragmentShader from "../shaders/waterFragment";
 import type { QualitySettings } from "../core/quality";
-import {
-  HOME_BACKGROUND,
-  HOME_FOG_COLOR,
-  HOME_FOG_FAR,
-  HOME_FOG_NEAR,
-} from "../config/visual";
-
-interface PetalState {
-  x: number;
-  y: number;
-  z: number;
-  size: number;
-  speed: number;
-  phase: number;
-  spin: number;
-}
+import { HOME_BACKGROUND, HOME_FOG_COLOR, HOME_FOG_NEAR, HOME_FOG_FAR } from "../config/visual";
 
 const createSeededRandom = (seed: number) => {
   let state = seed >>> 0;
@@ -112,20 +98,30 @@ class HomeScene {
     THREE.PointsMaterial
   >;
 
-  private readonly petals: THREE.InstancedMesh<
-    THREE.BufferGeometry,
-    THREE.MeshPhysicalMaterial
-  >;
-
-  private readonly petalStates: PetalState[] = [];
-
   private readonly geometries: THREE.BufferGeometry[] = [];
 
   private readonly materials: THREE.Material[] = [];
 
   private readonly textures: THREE.Texture[] = [];
 
-  private readonly instanceTransform = new THREE.Object3D();
+  private readonly time = { value: 0 };
+  private readonly captureMaterials: Array<{
+    mesh: THREE.Mesh;
+    primary: THREE.MeshPhysicalMaterial;
+    capture: THREE.MeshPhysicalMaterial;
+  }> = [];
+  private readonly capturedCameraMatrix = new THREE.Matrix4();
+  private readonly capturedProjection = new THREE.Matrix4();
+  private capturedTime = -1;
+  private capturesDirty = true;
+  private readonly dawn = createDawnBackdrop();
+  private environmentTarget: THREE.WebGLRenderTarget | null = null;
+  private readonly refractionTarget = new THREE.WebGLRenderTarget(256, 256, {
+    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+    type: THREE.HalfFloatType, depthBuffer: true, stencilBuffer: false,
+    generateMipmaps: false,
+    depthTexture: new THREE.DepthTexture(256, 256, THREE.UnsignedIntType),
+  });
 
   private readonly quality: QualitySettings;
 
@@ -135,16 +131,17 @@ class HomeScene {
     this.quality = quality;
     this.scene = new THREE.Scene();
 
-    const backgroundColor = new THREE.Color(HOME_BACKGROUND);
-
-    this.scene.background = backgroundColor;
+    this.scene.background = new THREE.Color(HOME_BACKGROUND);
     this.scene.fog = new THREE.Fog(HOME_FOG_COLOR, HOME_FOG_NEAR, HOME_FOG_FAR);
+    this.scene.add(this.dawn);
+    this.geometries.push(this.dawn.geometry);
+    this.materials.push(this.dawn.material);
 
     const world = new THREE.Group();
     this.scene.add(world);
 
     world.name = "home";
-    world.add(createShellArchitecture(this.quality, this.geometries, this.materials));
+    world.add(createShellArchitecture(this.quality, this.geometries, this.materials, this.time));
 
     const waterGeometry = new THREE.PlaneGeometry(
       16.4,
@@ -156,7 +153,7 @@ class HomeScene {
     this.waterMaterial = new THREE.ShaderMaterial({
       vertexShader: waterVertexShader,
       fragmentShader: waterFragmentShader,
-      transparent: true,
+      transparent: false,
       side: THREE.DoubleSide,
       depthWrite: false,
       uniforms: {
@@ -166,12 +163,16 @@ class HomeScene {
         uPointerValid: { value: 0 },
         uHold: { value: 0 },
         uHoldTime: { value: 0 },
-        uDeepColor: { value: new THREE.Color("#597a83") },
-        uSurfaceColor: { value: new THREE.Color("#b7b8a5") },
+        uDeepColor: { value: new THREE.Color("#789eaf") },
+        uSurfaceColor: { value: new THREE.Color("#d3e8e7") },
+        uRefractionMap: { value: this.refractionTarget.texture },
+        uRefractionDepth: { value: this.refractionTarget.depthTexture },
+        uCameraNear: { value: 0.1 },
+        uCameraFar: { value: 100 },
         uReflectionMap: { value: this.reflectionTarget.texture },
         uReflectionMatrix: { value: this.reflectionViewProjection },
-        uReflectionStrength: { value: 0.24 },
-        uDistortionStrength: { value: 0.012 },
+        uReflectionStrength: { value: 0.82 },
+        uDistortionStrength: { value: 0.032 },
       },
     });
     this.materials.push(this.waterMaterial);
@@ -182,7 +183,7 @@ class HomeScene {
     this.water.renderOrder = 2;
     world.add(this.water);
 
-    const dustCount = this.quality.dustCount;
+    const dustCount = Math.round(this.quality.dustCount * 0.65);
     const dustPositions = new Float32Array(dustCount * 3);
     const dustRandom = createSeededRandom(18291);
 
@@ -202,67 +203,42 @@ class HomeScene {
 
     const dustMaterial = new THREE.PointsMaterial({
       color: "#f4e1d5",
-      size: 0.045,
+      size: 0.025,
       transparent: true,
-      opacity: 0.52,
+      opacity: 0.3,
       depthWrite: false,
       sizeAttenuation: true,
     });
+    const pointPixels = new Uint8Array(32 * 32 * 4);
+    for (let y = 0; y < 32; y++) {
+      for (let x = 0; x < 32; x++) {
+        const distance = Math.hypot((x - 15.5) / 15.5, (y - 15.5) / 15.5);
+        const offset = (y * 32 + x) * 4;
+        pointPixels.set([255, 255, 255, Math.round(Math.max(0, 1 - distance) ** 2 * 255)], offset);
+      }
+    }
+    const pointTexture = new THREE.DataTexture(pointPixels, 32, 32);
+    pointTexture.needsUpdate = true;
+    dustMaterial.map = pointTexture;
+    this.textures.push(pointTexture);
     this.materials.push(dustMaterial);
     this.particles = new THREE.Points(dustGeometry, dustMaterial);
     this.scene.add(this.particles);
 
-    const petalShape = new THREE.Shape();
-    petalShape.moveTo(0, 0);
-    petalShape.bezierCurveTo(-0.12, 0.2, -0.08, 0.42, 0, 0.52);
-    petalShape.bezierCurveTo(0.08, 0.42, 0.12, 0.2, 0, 0);
-    const petalGeometry = new THREE.ShapeGeometry(petalShape, 10);
-    const petalMaterial = new THREE.MeshPhysicalMaterial({
-      color: "#f2c4c1",
-      roughness: 0.72,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.76,
-      depthWrite: false,
-    });
-    const petalCount = this.quality.petalCount;
-
-    this.geometries.push(petalGeometry);
-    this.materials.push(petalMaterial);
-    this.petals = new THREE.InstancedMesh(
-      petalGeometry,
-      petalMaterial,
-      petalCount,
-    );
-
-    const petalRandom = createSeededRandom(7712);
-
-    for (let index = 0; index < petalCount; index++) {
-      this.petalStates.push({
-        x: (petalRandom() - 0.5) * 19,
-        y: 0.7 + petalRandom() * 5.8,
-        z: 5 - petalRandom() * 35,
-        size: 0.35 + petalRandom() * 0.7,
-        speed: 0.12 + petalRandom() * 0.24,
-        phase: petalRandom() * Math.PI * 2,
-        spin: (petalRandom() - 0.5) * 1.4,
-      });
-    }
-
-    this.scene.add(this.petals);
-
     const hemisphere = new THREE.HemisphereLight(
-      "#f2dce0",
-      "#626b59",
-      1.35,
+      "#cad8f6",
+      "#badbdc",
+      0.75,
     );
     this.scene.add(hemisphere);
 
-    const ambientLight = new THREE.AmbientLight("#f4d9d4", 0.34);
+    const ambientLight = new THREE.AmbientLight("#e6dff4", 0.14);
     this.scene.add(ambientLight);
 
-    const sun = new THREE.DirectionalLight("#ffe0ce", 2.05);
-    sun.position.set(-7, 11, 7);
+    const sun = new THREE.DirectionalLight("#ffe5d1", 1.45);
+    sun.position.set(-3, 7, -15);
+    sun.target.position.set(0, 0.5, -2);
+    this.scene.add(sun.target);
     sun.castShadow = this.quality.shadows;
     sun.shadow.mapSize.set(
       this.quality.shadowMapSize,
@@ -278,9 +254,38 @@ class HomeScene {
     sun.shadow.radius = 3;
     this.scene.add(sun);
 
-    const skyFill = new THREE.DirectionalLight("#d0c3ea", 0.5);
-    skyFill.position.set(6, 5, -11);
+    const skyFill = new THREE.DirectionalLight("#c9d8ff", 0.55);
+    skyFill.position.set(1, 4, 8);
     this.scene.add(skyFill);
+    const waterBounce = new THREE.HemisphereLight("#d9eeee", "#97bac8", 0.18);
+    waterBounce.position.set(0, -1, 0);
+    this.scene.add(waterBounce);
+    const rim = new THREE.DirectionalLight("#fff0e4", 0.65);
+    rim.position.set(5, 5, -24);
+    rim.target.position.set(-4, 4, -4);
+    this.scene.add(rim, rim.target);
+
+    // Reflections/refraction already use their own scene targets. Avoid a
+    // nested physical transmission pass for small mineral details in each
+    // capture; the final view retains the full physical materials.
+    const captureVariants = new Map<THREE.MeshPhysicalMaterial, THREE.MeshPhysicalMaterial>();
+    this.scene.traverse((object) => {
+      if (!(object instanceof THREE.Mesh) ||
+          !(object.material instanceof THREE.MeshPhysicalMaterial) ||
+          object.material.transmission === 0) return;
+      const primary = object.material;
+      let capture = captureVariants.get(primary);
+      if (!capture) {
+        capture = primary.clone();
+        capture.name = `${primary.name} auxiliary capture`;
+        capture.transmission = 0;
+        capture.onBeforeCompile = primary.onBeforeCompile;
+        capture.customProgramCacheKey = primary.customProgramCacheKey;
+        captureVariants.set(primary, capture);
+        this.materials.push(capture);
+      }
+      this.captureMaterials.push({ mesh: object, primary, capture });
+    });
   }
 
   update(
@@ -311,7 +316,8 @@ class HomeScene {
       delta,
     );
 
-    this.pointerNdc.set(pointerX, pointerY);
+    // Experience pointerY grows downwards; raycasting uses NDC with +Y upwards.
+    this.pointerNdc.set(pointerX, -pointerY);
     this.pointerRaycaster.setFromCamera(this.pointerNdc, camera);
     const intersection = this.pointerRaycaster.ray.intersectPlane(
       this.waterPlane,
@@ -350,6 +356,7 @@ class HomeScene {
       (this.pointerValid - this.previousPointerValid) * smoothing;
     this.lastUpdateTime = elapsed;
 
+    this.time.value = elapsed;
     this.waterMaterial.uniforms.uTime.value = elapsed;
     this.waterMaterial.uniforms.uMouseUv.value.copy(this.pointerUv);
     this.waterMaterial.uniforms.uPointerVelocity.value.copy(
@@ -364,29 +371,9 @@ class HomeScene {
     );
 
     if (!freezeParticles || !this.particlesInitialized) {
-      this.particles.rotation.y = Math.sin(elapsed * 0.06) * 0.025;
-      this.particles.position.y = Math.sin(elapsed * 0.15) * 0.045;
+      this.particles.rotation.y = Math.sin(elapsed * 0.035) * 0.012;
+      this.particles.position.y = Math.sin(elapsed * 0.09) * 0.025;
 
-      for (let index = 0; index < this.petalStates.length; index++) {
-        const petal = this.petalStates[index];
-        const drift = elapsed * petal.speed + petal.phase;
-
-        this.instanceTransform.position.set(
-          petal.x + Math.sin(drift * 0.7) * 0.32,
-          petal.y + Math.sin(drift) * 0.22,
-          petal.z + Math.cos(drift * 0.45) * 0.24,
-        );
-        this.instanceTransform.rotation.set(
-          Math.sin(drift * 0.6) * 0.45,
-          drift * petal.spin,
-          Math.cos(drift * 0.8) * 0.5,
-        );
-        this.instanceTransform.scale.setScalar(petal.size);
-        this.instanceTransform.updateMatrix();
-        this.petals.setMatrixAt(index, this.instanceTransform.matrix);
-      }
-
-      this.petals.instanceMatrix.needsUpdate = true;
       this.particlesInitialized = true;
     }
   }
@@ -400,27 +387,47 @@ class HomeScene {
       pixelRatio,
       this.quality.maxPixelRatio,
     );
-    const targetWidth = THREE.MathUtils.clamp(
-      Math.round(width * reflectionPixelRatio * this.quality.reflectionScale),
-      64,
-      this.quality.maxReflectionSize,
+    const scale = Math.min(
+      reflectionPixelRatio * this.quality.reflectionScale,
+      this.quality.maxReflectionSize / Math.max(width, height),
     );
-    const targetHeight = THREE.MathUtils.clamp(
-      Math.round(height * reflectionPixelRatio * this.quality.reflectionScale),
-      64,
-      this.quality.maxReflectionSize,
-    );
-
+    const targetWidth = Math.max(1, Math.round(width * scale));
+    const targetHeight = Math.max(1, Math.round(height * scale));
     this.reflectionTarget.setSize(targetWidth, targetHeight);
+    this.refractionTarget.setSize(targetWidth, targetHeight);
+    this.capturesDirty = true;
   }
 
   renderReflection(
     renderer: THREE.WebGLRenderer,
     camera: THREE.PerspectiveCamera,
   ) {
+    if (!this.environmentTarget) {
+      const environmentScene = new THREE.Scene();
+      environmentScene.add(this.dawn.clone());
+      const generator = new THREE.PMREMGenerator(renderer);
+      try {
+        this.environmentTarget = generator.fromScene(environmentScene, 0.04, 0.1, 100,
+          { size: this.quality.mode === "high" ? 128 : 64 });
+        this.scene.environment = this.environmentTarget.texture;
+        this.scene.environmentIntensity = 0.45;
+      } finally {
+        generator.dispose();
+        environmentScene.clear();
+      }
+    }
+    camera.updateMatrixWorld(true);
+    const sameCamera = camera.matrixWorld.equals(this.capturedCameraMatrix) &&
+      camera.projectionMatrix.equals(this.capturedProjection);
+    const captureInterval = this.quality.mode === "low" ? 1 / 15 : 1 / 30;
+    // Static debug captures need only one pair of passes. Camera motion always
+    // invalidates immediately; animated caustics/dust refresh at a bounded rate.
+    if (!this.capturesDirty && sameCamera &&
+        this.time.value - this.capturedTime < captureInterval) return;
     const waterVisible = this.water.visible;
     const previousRenderTarget = renderer.getRenderTarget();
     const previousAutoClear = renderer.autoClear;
+    const previousTransmissionScale = renderer.transmissionResolutionScale;
     const previousShadowMapEnabled =
       renderer.shadowMap.enabled;
 
@@ -443,9 +450,7 @@ class HomeScene {
     this.reflectionCamera.far = camera.far;
     this.reflectionCamera.fov = camera.fov;
     this.reflectionCamera.zoom = camera.zoom;
-    this.reflectionCamera.aspect =
-      this.reflectionTarget.width /
-      this.reflectionTarget.height;
+    this.reflectionCamera.aspect = camera.aspect;
     this.reflectionCamera.updateProjectionMatrix();
     this.reflectionCamera.lookAt(this.reflectionTargetPosition);
     this.reflectionCamera.updateMatrixWorld(true);
@@ -458,17 +463,32 @@ class HomeScene {
     this.water.visible = false;
 
     try {
+      for (const { mesh, capture } of this.captureMaterials) mesh.material = capture;
       renderer.autoClear = true;
+      renderer.transmissionResolutionScale = this.quality.mode === "high" ? 0.5 : 0.35;
       renderer.shadowMap.enabled = false;
       renderer.setRenderTarget(this.reflectionTarget);
       renderer.clear();
       renderer.render(this.scene, this.reflectionCamera);
+      // Real scene color and depth from the same camera, excluding the water.
+      // Both maps remain linear; water applies tone/color conversion only once.
+      this.waterMaterial.uniforms.uCameraNear.value = camera.near;
+      this.waterMaterial.uniforms.uCameraFar.value = camera.far;
+      renderer.setRenderTarget(this.refractionTarget);
+      renderer.clear();
+      renderer.render(this.scene, camera);
+      this.capturedCameraMatrix.copy(camera.matrixWorld);
+      this.capturedProjection.copy(camera.projectionMatrix);
+      this.capturedTime = this.time.value;
+      this.capturesDirty = false;
     } finally {
+      for (const { mesh, primary } of this.captureMaterials) mesh.material = primary;
       this.water.visible = waterVisible;
       renderer.shadowMap.enabled =
         previousShadowMapEnabled;
       renderer.setRenderTarget(previousRenderTarget);
       renderer.autoClear = previousAutoClear;
+      renderer.transmissionResolutionScale = previousTransmissionScale;
     }
   }
 
@@ -477,6 +497,18 @@ class HomeScene {
     new Set(this.materials).forEach((material) => material.dispose());
     new Set(this.textures).forEach((texture) => texture.dispose());
     this.reflectionTarget.dispose();
+    this.refractionTarget.depthTexture?.dispose();
+    this.refractionTarget.dispose();
+    this.scene.environment = null;
+    this.environmentTarget?.dispose();
+    this.environmentTarget = null;
+    this.scene.traverse((object) => {
+      if (object instanceof THREE.DirectionalLight ||
+          object instanceof THREE.PointLight || object instanceof THREE.SpotLight) {
+        object.shadow.dispose();
+      }
+    });
+    this.scene.clear();
   }
 }
 

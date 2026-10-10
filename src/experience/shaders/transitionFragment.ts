@@ -21,13 +21,13 @@ float waterField(vec2 uv, float time) {
 }
 
 void main() {
-  float progress = smoothstep(0.0, 1.0, uProgress);
+  float progress = smoothstep(0.18, 0.78, uProgress);
   float envelope = sin(progress * 3.14159265);
   float aspect = uResolution.x / max(uResolution.y, 1.0);
   vec2 centered = vUv - 0.5;
 
   float field = waterField(vUv, uTime);
-  float waveAmplitude = 0.011 + min(uVelocity, 2.0) * 0.002;
+  float waveAmplitude = 0.008 + min(uVelocity, 2.0) * 0.0015;
   float directionLag =
     uDirection * min(uVelocity, 2.0) * 0.0025;
   float waterline =
@@ -37,7 +37,7 @@ void main() {
 
   float signedDistance = vUv.y - waterline;
   float lineDistance = abs(signedDistance);
-  float lineWidth = mix(0.038, 0.018, envelope);
+  float lineWidth = mix(0.025, 0.011, envelope);
   float projectsMask = smoothstep(
     -lineWidth,
     lineWidth,
@@ -45,7 +45,7 @@ void main() {
   );
 
   float refractionBand =
-    exp(-lineDistance * (18.0 + envelope * 8.0)) *
+    exp(-lineDistance * (35.0 + envelope * 12.0)) *
     envelope;
   float broadDistortion = envelope * (
     sin(vUv.y * 7.0 + progress * 4.2 + uTime * 0.18) * 0.006 +
@@ -92,7 +92,7 @@ void main() {
   float waterTint = refractionBand * 0.12;
   homeColor = mix(
     homeColor,
-    vec3(0.42, 0.56, 0.57),
+    vec3(0.62, 0.76, 0.8),
     waterTint
   );
 
@@ -101,7 +101,7 @@ void main() {
   vec3 transitionColor = mix(homeColor, projectColor, projectsMask);
   transitionColor = mix(
     transitionColor,
-    vec3(0.76, 0.82, 0.78),
+    vec3(0.92, 0.91, 0.84),
     waterEdge * 0.28
   );
   transitionColor += vec3(0.035, 0.034, 0.028) * softGlint;
