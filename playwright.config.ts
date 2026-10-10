@@ -17,7 +17,9 @@ export default defineConfig({
         "--enable-webgl",
         "--ignore-gpu-blocklist",
         "--use-gl=angle",
-        "--use-angle=swiftshader",
+        // Keep software rendering as the default for reproducible CI captures.
+        // Native D3D11 is an opt-in on Windows when compiling physical materials.
+        `--use-angle=${process.env.PLAYWRIGHT_GPU_BACKEND === "d3d11" ? "d3d11" : "swiftshader"}`,
       ],
     },
   },
