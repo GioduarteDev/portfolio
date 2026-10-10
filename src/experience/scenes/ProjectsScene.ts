@@ -5,6 +5,7 @@ import {
   type ProjectItem,
 } from "../data/projects";
 import type { QualitySettings } from "../core/quality";
+import { PROJECT_SCENE_VALUES } from "../config/visual";
 
 export {
   PROJECT_FILTERS,
@@ -13,45 +14,7 @@ export {
   type ProjectItem,
 } from "../data/projects";
 
-export const PROJECT_SCENE_CONFIG = {
-  background: "#f0eeea",
-  fogNear: 34,
-  fogFar: 62,
-  cameraFov: 43,
-  cameraNear: 0.1,
-  cameraFar: 100,
-  cameraZ: -17,
-  cameraTargetZ: -27,
-  planeZ: -26.5,
-  architectureZ: -36,
-  floorY: -5.2,
-  columnX: [-2.55, 2.55] as const,
-  rowGap: 5.25,
-  firstRowY: 4.1,
-  columnYStagger: [0.18, -0.16] as const,
-  imageMaxWidth: 3.75,
-  imageMaxHeight: 3.45,
-  shadowOffset: [0.055, -0.075, -0.035] as const,
-  scrollDistancePerOffset: 20,
-  endSectionViewports: 1.15,
-  visibleRange: 5.7,
-  fadeRange: 1.7,
-  minimumResponsiveScale: 0.34,
-  responsiveReferenceAspect: 1.48,
-  maximumResponsiveScale: 1,
-  filterTransitionDuration: 0.48,
-  swayAmplitude: 0.012,
-  swayFrequency: 0.16,
-  columnYaw: 0.009,
-  scrollTiltScale: 0.0025,
-  maximumScrollTilt: 0.014,
-  particles: 150,
-  particleWidth: 17,
-  particleHeight: 12,
-  particleNearZ: -27,
-  particleDepth: 13,
-  reflectionDepthOffset: 0.035,
-} as const;
+export const PROJECT_SCENE_CONFIG = PROJECT_SCENE_VALUES;
 
 type ProjectCard = {
   item: ProjectItem;
@@ -62,6 +25,10 @@ type ProjectCard = {
   >;
   shadowMaterial: THREE.MeshBasicMaterial;
   readonly baseY: number;
+  readonly width: number;
+  readonly height: number;
+  metaElement: HTMLElement | null;
+  metaVisible: boolean;
   targetBaseY: number;
   targetColumn: 0 | 1;
   currentColumn: number;
@@ -100,6 +67,8 @@ class ProjectsScene {
   private readonly projectRaycaster = new THREE.Raycaster();
 
   private readonly projectPointer = new THREE.Vector2();
+
+  private readonly metaPoint = new THREE.Vector3();
 
   private readonly geometries: THREE.BufferGeometry[] = [];
 
@@ -178,48 +147,69 @@ class ProjectsScene {
     );
     this.architecture.add(wall);
 
-    const archMaterial = new THREE.MeshBasicMaterial({
-      color: "#dedbd5",
-      side: THREE.DoubleSide,
-    });
-    this.materials.push(archMaterial);
-
-    const archPositions = [
-      { x: -8.7, y: -0.45, scale: 1.05, depth: -0.1 },
-      { x: 0, y: -0.25, scale: 1.4, depth: 0.32 },
-      { x: 8.7, y: -0.5, scale: 0.98, depth: 0.04 },
+    const layers = [
+      { color: "#e1ded8", z: 2.2, scale: 1.28, xs: [-12.5, -2.6, 8.2, 17.5], y: -0.8 },
+      { color: "#dad6d0", z: 0.4, scale: 1.1, xs: [-9.4, 0, 9.4], y: -0.45 },
+      { color: "#d3cfc8", z: -1.6, scale: 0.9, xs: [-5.2, 5.2], y: -0.1 },
     ] as const;
 
-    for (const archPosition of archPositions) {
-      const geometry = this.createArchGeometry();
-      this.geometries.push(geometry);
+    const archGeometry = this.createArchGeometry();
+    this.geometries.push(archGeometry);
 
-      const arch = new THREE.Mesh(geometry, archMaterial);
-      arch.position.set(
-        archPosition.x,
-        archPosition.y,
-        PROJECT_SCENE_CONFIG.architectureZ + archPosition.depth,
-      );
-      arch.scale.setScalar(archPosition.scale);
-      this.architecture.add(arch);
+    for (const layer of layers) {
+      const material = new THREE.MeshBasicMaterial({
+        color: layer.color,
+        side: THREE.DoubleSide,
+      });
+      this.materials.push(material);
+
+      for (const x of layer.xs) {
+        const arch = new THREE.Mesh(archGeometry, material);
+        arch.position.set(
+          x,
+          layer.y,
+          PROJECT_SCENE_CONFIG.architectureZ + layer.z,
+        );
+        arch.scale.setScalar(layer.scale);
+        this.architecture.add(arch);
+      }
     }
 
-    const columnGeometry = new THREE.CylinderGeometry(
-      0.16,
-      0.19,
-      9.2,
-      20,
-      1,
-    );
-    const columnPositions = [-11.1, -5.4, 5.4, 11.1] as const;
-    this.geometries.push(columnGeometry);
+    const pierGeometry = new THREE.BoxGeometry(0.7, 11, 0.9);
+    this.geometries.push(pierGeometry);
+    const pierMaterial = new THREE.MeshBasicMaterial({
+      color: "#d9d5cf",
+    });
+    this.materials.push(pierMaterial);
 
-    for (const x of columnPositions) {
-      const column = new THREE.Mesh(columnGeometry, archMaterial);
+    const piers = [
+      { x: -14.2, z: 4.6 },
+      { x: -7, z: 3.1 },
+      { x: 7, z: 3.1 },
+      { x: 14.2, z: 4.6 },
+    ] as const;
+
+    for (const pier of piers) {
+      const mesh = new THREE.Mesh(pierGeometry, pierMaterial);
+      mesh.position.set(
+        pier.x,
+        -0.2,
+        PROJECT_SCENE_CONFIG.architectureZ + pier.z,
+      );
+      this.architecture.add(mesh);
+    }
+
+    const columnGeometry = new THREE.CylinderGeometry(0.16, 0.19, 9.2, 20, 1);
+    this.geometries.push(columnGeometry);
+    const columnMaterial = new THREE.MeshBasicMaterial({ color: "#d6d2cb" });
+    this.materials.push(columnMaterial);
+
+    for (const x of [-4.4, 4.4]) {
+      const column = new THREE.Mesh(columnGeometry, columnMaterial);
       column.position.set(
         x,
         -0.45,
-        PROJECT_SCENE_CONFIG.architectureZ + 0.55,
+        PROJECT_SCENE_CONFIG.architectureZ + 0.9,
       );
       this.architecture.add(column);
     }
@@ -337,6 +327,10 @@ class ProjectsScene {
         image,
         shadowMaterial,
         baseY,
+        width,
+        height,
+        metaElement: null,
+        metaVisible: false,
         targetBaseY: baseY,
         targetColumn: item.column,
         currentColumn: item.column,
@@ -361,7 +355,6 @@ class ProjectsScene {
       this.loadingTextures.has(path) ||
       this.failedTextures.has(path)
     ) return;
-    this.loadingTextures.add(path);
     this.loadingTextures.add(path);
     const texture = this.textureLoader.load(
       path,
@@ -426,10 +419,10 @@ class ProjectsScene {
     );
 
     const material = new THREE.PointsMaterial({
-      color: "#a9a49e",
-      size: 0.018,
+      color: "#8f8a83",
+      size: 0.011,
       transparent: true,
-      opacity: 0.22,
+      opacity: 0.12,
       depthWrite: false,
       sizeAttenuation: true,
     });
@@ -674,6 +667,12 @@ class ProjectsScene {
       PROJECT_SCENE_CONFIG.maximumScrollTilt,
     );
 
+    const scrollStretch = THREE.MathUtils.clamp(
+      Math.abs(scrollVelocity) * 0.0004,
+      0,
+      PROJECT_SCENE_CONFIG.maximumScrollStretch,
+    );
+
     for (const card of this.projectCards) {
       const targetY = card.targetBaseY + scrollDistance;
       const scrollDelta =
@@ -742,7 +741,11 @@ class ProjectsScene {
         y,
         PROJECT_SCENE_CONFIG.planeZ,
       );
-      card.group.scale.setScalar(responsiveScale);
+      card.group.scale.set(
+        responsiveScale,
+        responsiveScale * (1 + scrollStretch),
+        responsiveScale,
+      );
       card.group.rotation.set(
         THREE.MathUtils.clamp(
           -y * 0.0012,
@@ -765,6 +768,53 @@ class ProjectsScene {
     if (!freezeParticles) {
       this.particles.rotation.y = Math.sin(elapsed * 0.03) * 0.009;
       this.particles.position.y = Math.sin(elapsed * 0.12) * 0.025;
+    }
+  }
+
+  attachMetaLayer(layer: HTMLElement | null) {
+    for (const card of this.projectCards) {
+      card.metaElement =
+        layer?.querySelector<HTMLElement>(
+          `[data-project-id="${card.item.id}"]`,
+        ) ?? null;
+      card.metaVisible = false;
+    }
+  }
+
+  updateMeta(
+    camera: THREE.PerspectiveCamera,
+    viewportWidth: number,
+    viewportHeight: number,
+    active: boolean,
+  ) {
+    const point = this.metaPoint;
+    for (const card of this.projectCards) {
+      const element = card.metaElement;
+      if (!element) continue;
+
+      const opacity = active ? card.image.material.opacity : 0;
+      const visible = card.group.visible && opacity > 0.02;
+      if (!visible) {
+        if (card.metaVisible) {
+          element.style.opacity = "0";
+          card.metaVisible = false;
+        }
+        continue;
+      }
+
+      point.set(
+        card.group.position.x - (card.width * card.group.scale.x) / 2,
+        card.group.position.y - (card.height * card.group.scale.y) / 2,
+        card.group.position.z,
+      );
+      point.project(camera);
+      const px = (point.x * 0.5 + 0.5) * viewportWidth;
+      const py = (-point.y * 0.5 + 0.5) * viewportHeight;
+      element.style.transform = `translate3d(${px.toFixed(1)}px, ${(
+        py + PROJECT_SCENE_CONFIG.metaOffsetPx
+      ).toFixed(1)}px, 0)`;
+      element.style.opacity = opacity.toFixed(3);
+      card.metaVisible = true;
     }
   }
 

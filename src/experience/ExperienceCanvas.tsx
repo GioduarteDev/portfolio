@@ -15,6 +15,14 @@ import ProjectsScene, {
   PROJECT_SCENE_CONFIG,
   type ProjectFilter,
 } from "./scenes/ProjectsScene";
+import {
+  HOME_CAMERA_FAR,
+  HOME_CAMERA_FOV,
+  HOME_CAMERA_NEAR,
+  HOME_CAMERA_START,
+  HOME_PARALLAX_X,
+  HOME_PARALLAX_Y,
+} from "./config/visual";
 import type { ProjectItem } from "./data/projects";
 
 import ScrollManager, {
@@ -25,6 +33,7 @@ import {
   getQualitySettings,
 } from "./core/quality";
 import SceneTransition from "./core/SceneTransition";
+import DebugHud from "./core/debugHud";
 import WorldInteractionManager from "./core/WorldInteractionManager";
 import WorldScene, {
   WORLD_SCENE_CONFIG,
@@ -156,6 +165,10 @@ const ExperienceCanvas = forwardRef<
 
     const projects =
       new ProjectsScene(quality);
+    projects.attachMetaLayer(
+      uiRoot?.querySelector<HTMLElement>(".project-meta-layer") ??
+        null,
+    );
 
     const contact =
       new ContactScene();
@@ -169,17 +182,15 @@ const ExperienceCanvas = forwardRef<
 
     const homeCamera =
       new THREE.PerspectiveCamera(
-        38,
+        HOME_CAMERA_FOV,
         container.clientWidth /
           container.clientHeight,
-        0.1,
-        100,
+        HOME_CAMERA_NEAR,
+        HOME_CAMERA_FAR,
       );
 
     homeCamera.position.set(
-      0,
-      2.1,
-      9,
+      ...HOME_CAMERA_START,
     );
 
     const projectsCamera =
@@ -414,6 +425,9 @@ const ExperienceCanvas = forwardRef<
       renderer.domElement,
     );
 
+    const debugHud = readVisualDebugState().enabled
+      ? new DebugHud(container)
+      : null;
     // ===================================================
     // SCENE TRANSITION
     // ===================================================
@@ -721,6 +735,30 @@ const ExperienceCanvas = forwardRef<
       }
       const scrollState = scroll.update(motionDelta);
 
+      if (debugHud) {
+        const hudSection =
+          worldProgress > 0 || worldTarget > 0
+            ? "world"
+            : contactProgress > 0 || contactTarget > 0
+              ? "contact"
+              : scrollState.phase;
+        debugHud.tick(frameTime, {
+          scene: hudSection,
+          homeProgress: scrollState.homeProgress,
+          transitionProgress: scrollState.transitionProgress,
+          projectsOffset: scrollState.projectsOffset,
+          projectsMaxOffset: projects.getProjectsMaxOffset(activeProjectFilter),
+          camera:
+            hudSection === "world"
+              ? worldCamera
+              : hudSection === "contact"
+                ? contactCamera
+                : hudSection === "projects"
+                  ? projectsCamera
+                  : homeCamera,
+          soundEnabled: !audioManager.state.muted,
+        });
+      }
       const requestedNavigation = pendingNavigationRef.current;
       if (
         requestedNavigation &&
@@ -1026,12 +1064,12 @@ const ExperienceCanvas = forwardRef<
 
       desiredHomePosition.x +=
         pointer.x *
-        0.55 *
+        HOME_PARALLAX_X *
         parallaxStrength;
 
       desiredHomePosition.y -=
         pointer.y *
-        0.28 *
+        HOME_PARALLAX_Y *
         parallaxStrength;
 
       // =================================================
@@ -1149,6 +1187,13 @@ const ExperienceCanvas = forwardRef<
         scrollState.transitionProgress >= 1 &&
         contactProgress <= 0 &&
         worldProgress <= 0;
+      projectsCamera.updateMatrixWorld();
+      projects.updateMeta(
+        projectsCamera,
+        container.clientWidth,
+        container.clientHeight,
+        projectCardsEnabled,
+      );
 
       if (uiRoot) {
         const overProject =
@@ -1321,6 +1366,7 @@ const ExperienceCanvas = forwardRef<
     // ===================================================
 
     return () => {
+      debugHud?.dispose();
       cancelAnimationFrame(
         animationFrame,
       );

@@ -1,3 +1,5 @@
+import { EXPERIENCE_SCROLL_VALUES } from "../config/visual";
+
 export type ExperienceScrollPhase =
   | "home"
   | "transition"
@@ -34,22 +36,7 @@ export type ExperienceScrollConfig = {
 };
 
 export const EXPERIENCE_SCROLL_CONFIG:
-  Readonly<ExperienceScrollConfig> = {
-    homeScrollLength: 0.36,
-    transitionScrollLength: 0.22,
-    projectsScrollUnit: 0.42,
-    homeCameraPathAtTransitionStart: 0.36,
-    homeCameraPathEnd: 0.58,
-    dampingRate: 4,
-    wheelStrength: 0.00055,
-    touchStrength: 0.0025,
-    directionEpsilon: 0.000001,
-    settleEpsilon: 0.0001,
-    homeUiFadeStart: 0.75,
-    homeParallaxFadeStart: 0.27,
-    projectsUiFadeStart: 0.73,
-    homeParallaxEndStrength: 0,
-  };
+  Readonly<ExperienceScrollConfig> = EXPERIENCE_SCROLL_VALUES;
 
 class ScrollManager {
   private currentPosition = 0;

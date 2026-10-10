@@ -774,7 +774,7 @@ a {
   align-items: center;
   justify-content: space-between;
 
-  font-size: 11px;
+  font-size: clamp(12px, 0.95vw, 14px);
   opacity: var(--projects-content-opacity);
   transition: opacity 160ms linear;
 }
@@ -782,7 +782,7 @@ a {
 .projects-filter__options {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: clamp(14px, 1.6vw, 26px);
   flex-wrap: wrap;
 }
 
@@ -823,15 +823,52 @@ a {
 
 .selected-projects-label {
   position: absolute;
-  top: 72px;
+  top: 64px;
   left: 50%;
 
   transform: translateX(-50%);
 
-  font-size: 11px;
+  font-size: clamp(18px, 1.9vw, 28px);
+  font-weight: 400;
+  letter-spacing: -0.01em;
   line-height: 1;
   opacity: var(--projects-content-opacity);
   transition: opacity 160ms linear;
+}
+
+.project-meta-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.project-meta {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  opacity: 0;
+  color: #343331;
+  font-size: clamp(11px, 0.9vw, 14px);
+  line-height: 1.2;
+  will-change: transform, opacity;
+}
+
+.project-meta__title {
+  font-size: clamp(13px, 1.1vw, 17px);
+}
+
+.project-meta__info {
+  display: flex;
+  gap: 10px;
+  opacity: 0.55;
+}
+
+.project-meta__info i {
+  font-style: normal;
 }
 
 .projects-interface__drag {
@@ -962,9 +999,10 @@ a {
   }
 
   .selected-projects-label {
-    top: 70px;
+    top: 66px;
     left: 20px;
     transform: none;
+    font-size: 18px;
   }
 
   .projects-interface__drag {
@@ -1624,4 +1662,21 @@ a {
     scroll-behavior: auto !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+.debug-hud {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  z-index: 9999;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: rgba(10, 10, 12, 0.55);
+  color: rgba(255, 255, 255, 0.82);
+  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0;
+  pointer-events: none;
+  user-select: none;
+  white-space: pre;
 }

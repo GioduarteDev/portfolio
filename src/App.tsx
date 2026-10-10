@@ -23,6 +23,7 @@ import {
 } from "./experience/scenes/ProjectsScene";
 import type { WorldSelection } from "./experience/scenes/WorldScene";
 import {
+  PROJECT_ITEMS,
   getProjectBySlug,
 } from "./experience/data/projects";
 import {
@@ -359,6 +360,7 @@ function App() {
   async function configureAudio(
     enabled: boolean,
     request: number,
+    fadeSeconds?: number,
   ) {
     try {
       await audioManager.initialize();
@@ -367,15 +369,14 @@ function App() {
         return;
       }
 
-      if (enabled) {
-        await audioManager.startMusic();
-      }
+      // Music always runs so it keeps its place in time while muted.
+      await audioManager.startMusic();
 
       if (request !== audioRequestRef.current) {
         return;
       }
 
-      await audioManager.setMuted(!enabled);
+      await audioManager.setEnabled(enabled, fadeSeconds);
     } catch (error) {
       console.error(
         "Unable to initialize or update audio playback.",
@@ -402,7 +403,7 @@ function App() {
         ? `#projects/${encodeURIComponent(requestedSlug)}`
         : `#${requestedSection}`,
     );
-    void configureAudio(withAudio, request);
+    void configureAudio(withAudio, request, withAudio ? 2 : 0.3);
   }
 
   function toggleAudio() {
@@ -661,11 +662,10 @@ function App() {
               <button
                 type="button"
                 className="ui-link"
+                aria-pressed={audioEnabled}
                 onClick={toggleAudio}
               >
-                {audioEnabled
-                  ? "Sound On"
-                  : "Toggle Sound"}
+                {audioEnabled ? "Sound On" : "Sound Off"}
               </button>
             </div>
           </div>
@@ -689,6 +689,27 @@ function App() {
           ================================== */}
 
           <div className="projects-interface">
+            <div
+              className="project-meta-layer"
+              aria-hidden="true"
+            >
+              {PROJECT_ITEMS.map((item) => (
+                <div
+                  key={item.id}
+                  className="project-meta"
+                  data-project-id={item.id}
+                >
+                  <span className="project-meta__title">
+                    {item.title}
+                  </span>
+                  <span className="project-meta__info">
+                    {item.categories.join(" / ")}
+                    <i>{item.year}</i>
+                  </span>
+                </div>
+              ))}
+            </div>
+
             {/* PROJECTS INTRO */}
 
             <div className="projects-interface__intro">

@@ -3,6 +3,12 @@ import * as THREE from "three";
 import waterVertexShader from "../shaders/waterVertex";
 import waterFragmentShader from "../shaders/waterFragment";
 import type { QualitySettings } from "../core/quality";
+import {
+  HOME_BACKGROUND,
+  HOME_FOG_COLOR,
+  HOME_FOG_FAR,
+  HOME_FOG_NEAR,
+} from "../config/visual";
 
 interface PetalState {
   x: number;
@@ -199,10 +205,10 @@ class HomeScene {
     this.quality = quality;
     this.scene = new THREE.Scene();
 
-    const backgroundColor = new THREE.Color("#c8b0bd");
+    const backgroundColor = new THREE.Color(HOME_BACKGROUND);
 
     this.scene.background = backgroundColor;
-    this.scene.fog = new THREE.Fog("#d7c1c7", 22, 58);
+    this.scene.fog = new THREE.Fog(HOME_FOG_COLOR, HOME_FOG_NEAR, HOME_FOG_FAR);
 
     const world = new THREE.Group();
     this.scene.add(world);
