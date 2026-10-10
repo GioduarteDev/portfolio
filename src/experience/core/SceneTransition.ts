@@ -2,11 +2,22 @@ import * as THREE from "three";
 
 import transitionVertexShader from "../shaders/transitionVertex";
 import transitionFragmentShader from "../shaders/transitionFragment";
+import postProcessVertexShader from "../shaders/postProcessVertex";
+import postProcessFragmentShader from "../shaders/postProcessFragment";
+
+export const DEBUG_POST_PROCESSING = {
+  grain: true,
+  vignette: true,
+  chromaticAberration: true,
+  colorGrading: true,
+};
 
 class SceneTransition {
   private readonly homeTarget: THREE.WebGLRenderTarget;
 
   private readonly projectsTarget: THREE.WebGLRenderTarget;
+
+  private readonly finalTarget: THREE.WebGLRenderTarget;
 
   private readonly transitionScene: THREE.Scene;
 
@@ -14,7 +25,13 @@ class SceneTransition {
 
   private readonly transitionMaterial: THREE.ShaderMaterial;
 
+  private readonly postProcessScene: THREE.Scene;
+
+  private readonly postProcessMaterial: THREE.ShaderMaterial;
+
   private readonly quadGeometry: THREE.PlaneGeometry;
+
+  private readonly resolution = new THREE.Vector2();
 
   constructor(
     width: number,
@@ -34,6 +51,7 @@ class SceneTransition {
       1,
       Math.floor(height * pixelRatio),
     );
+    this.resolution.set(targetWidth, targetHeight);
 
     // =====================================================
     // RENDER TARGET — HOME
@@ -65,6 +83,15 @@ class SceneTransition {
 
     this.projectsTarget.texture.colorSpace =
       THREE.SRGBColorSpace;
+
+    this.finalTarget = new THREE.WebGLRenderTarget(
+      targetWidth,
+      targetHeight,
+      {
+        depthBuffer: false,
+      },
+    );
+    this.finalTarget.texture.colorSpace = THREE.SRGBColorSpace;
 
     // =====================================================
     // TRANSITION SCENE
@@ -129,8 +156,48 @@ class SceneTransition {
           uTime: {
             value: 0,
           },
+
+          uResolution: {
+            value: this.resolution,
+          },
+
+          uVelocity: {
+            value: 0,
+          },
+
+          uDirection: {
+            value: 0,
+          },
         },
       });
+
+    this.postProcessScene = new THREE.Scene();
+    this.postProcessMaterial = new THREE.ShaderMaterial({
+      vertexShader: postProcessVertexShader,
+      fragmentShader: postProcessFragmentShader,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+      uniforms: {
+        uInputTexture: {
+          value: this.finalTarget.texture,
+        },
+        uResolution: {
+          value: this.resolution,
+        },
+        uTime: {
+          value: 0,
+        },
+        uEffects: {
+          value: new THREE.Vector4(
+            Number(DEBUG_POST_PROCESSING.grain),
+            Number(DEBUG_POST_PROCESSING.vignette),
+            Number(DEBUG_POST_PROCESSING.chromaticAberration),
+            Number(DEBUG_POST_PROCESSING.colorGrading),
+          ),
+        },
+      },
+    });
 
     // =====================================================
     // FULLSCREEN QUAD
@@ -145,6 +212,11 @@ class SceneTransition {
     );
 
     this.transitionScene.add(quad);
+    const postProcessQuad = new THREE.Mesh(
+      this.quadGeometry,
+      this.postProcessMaterial,
+    );
+    this.postProcessScene.add(postProcessQuad);
   }
 
   // =====================================================
@@ -154,100 +226,52 @@ class SceneTransition {
   render(
     renderer: THREE.WebGLRenderer,
     homeScene: THREE.Scene,
+    homeCamera: THREE.Camera,
     projectsScene: THREE.Scene,
-    camera: THREE.PerspectiveCamera,
+    projectsCamera: THREE.Camera,
     progress: number,
     elapsed: number,
+    velocity: number,
+    direction: -1 | 0 | 1,
   ) {
     // ===================================================
     // ANTES DO MERGULHO
     //
     // Não precisamos renderizar as duas cenas.
-    // Mostramos apenas Home.
+    // Renderizamos apenas Home antes do pós-processamento final.
     // ===================================================
 
     if (progress <= 0.001) {
-      renderer.setRenderTarget(null);
+      renderer.setRenderTarget(this.finalTarget);
+      renderer.clear();
+      renderer.render(homeScene, homeCamera);
+    } else if (progress >= 0.999) {
+      renderer.setRenderTarget(this.finalTarget);
+      renderer.clear();
+      renderer.render(projectsScene, projectsCamera);
+    } else {
+      renderer.setRenderTarget(this.homeTarget);
+      renderer.clear();
+      renderer.render(homeScene, homeCamera);
 
-      renderer.render(
-        homeScene,
-        camera,
-      );
+      renderer.setRenderTarget(this.projectsTarget);
+      renderer.clear();
+      renderer.render(projectsScene, projectsCamera);
 
-      return;
+      this.transitionMaterial.uniforms.uProgress.value = progress;
+      this.transitionMaterial.uniforms.uTime.value = elapsed;
+      this.transitionMaterial.uniforms.uVelocity.value =
+        THREE.MathUtils.clamp(Math.abs(velocity), 0, 2);
+      this.transitionMaterial.uniforms.uDirection.value = direction;
+
+      renderer.setRenderTarget(this.finalTarget);
+      renderer.clear();
+      renderer.render(this.transitionScene, this.transitionCamera);
     }
 
-    // ===================================================
-    // DEPOIS DO MERGULHO
-    //
-    // Mostramos apenas Projects.
-    // ===================================================
-
-    if (progress >= 0.999) {
-      renderer.setRenderTarget(null);
-
-      renderer.render(
-        projectsScene,
-        camera,
-      );
-
-      return;
-    }
-
-    // ===================================================
-    // 1. RENDERIZA HOME NUMA TEXTURA
-    // ===================================================
-
-    renderer.setRenderTarget(
-      this.homeTarget,
-    );
-
-    renderer.clear();
-
-    renderer.render(
-      homeScene,
-      camera,
-    );
-
-    // ===================================================
-    // 2. RENDERIZA PROJECTS NUMA OUTRA TEXTURA
-    // ===================================================
-
-    renderer.setRenderTarget(
-      this.projectsTarget,
-    );
-
-    renderer.clear();
-
-    renderer.render(
-      projectsScene,
-      camera,
-    );
-
-    // ===================================================
-    // 3. ATUALIZA O SHADER DA TRANSIÇÃO
-    // ===================================================
-
-    this.transitionMaterial.uniforms.uProgress.value =
-      progress;
-
-    this.transitionMaterial.uniforms.uTime.value =
-      elapsed;
-
-    // ===================================================
-    // 4. VOLTA PARA A TELA REAL
-    // ===================================================
-
+    this.postProcessMaterial.uniforms.uTime.value = elapsed;
     renderer.setRenderTarget(null);
-
-    // ===================================================
-    // 5. MISTURA AS DUAS CENAS
-    // ===================================================
-
-    renderer.render(
-      this.transitionScene,
-      this.transitionCamera,
-    );
+    renderer.render(this.postProcessScene, this.transitionCamera);
   }
 
   // =====================================================
@@ -281,6 +305,13 @@ class SceneTransition {
       targetWidth,
       targetHeight,
     );
+
+    this.finalTarget.setSize(targetWidth, targetHeight);
+
+    this.resolution.set(
+      targetWidth,
+      targetHeight,
+    );
   }
 
   // =====================================================
@@ -291,8 +322,10 @@ class SceneTransition {
     this.homeTarget.dispose();
 
     this.projectsTarget.dispose();
+    this.finalTarget.dispose();
 
     this.transitionMaterial.dispose();
+    this.postProcessMaterial.dispose();
 
     this.quadGeometry.dispose();
   }

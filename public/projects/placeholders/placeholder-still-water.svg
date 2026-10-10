@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="1000" viewBox="0 0 820 1000">
+  <title>Temporary licensed-media placeholder: still water</title>
+  <rect width="820" height="1000" fill="#dedbd4"/>
+  <path d="M0 487c148-33 269-28 410 4s270 35 410-2v511H0z" fill="#b8c0b9"/>
+  <path d="M0 622c114-21 231-8 353 16 172 35 310 26 467-6v368H0z" fill="#899b99"/>
+  <path d="M140 518V258c0-127 103-230 230-230s230 103 230 230v260h-60V258c0-94-76-170-170-170s-170 76-170 170v260z" fill="#caa9a0"/>
+  <path d="M257 518V280c0-62 51-113 113-113s113 51 113 113v238h-39V280c0-41-33-74-74-74s-74 33-74 74v238z" fill="#eee8df"/>
+  <path d="M71 683c114-20 222-14 333 8s235 30 345 7" fill="none" stroke="#d6d5ca" stroke-width="8"/>
+  <path d="M24 740c142-23 279-10 401 13 141 27 259 23 372-2" fill="none" stroke="#aab7b1" stroke-width="5"/>
+  <ellipse cx="407" cy="600" rx="113" ry="15" fill="#d7c7bd"/>
+  <ellipse cx="407" cy="595" rx="76" ry="8" fill="#ece6dc"/>
+</svg>

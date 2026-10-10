@@ -1,232 +1,398 @@
-import { useEffect, useRef } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useImperativeHandle,
+  forwardRef,
+} from "react";
 
 import * as THREE from "three";
 
 import HomeScene from "./scenes/HomeScene";
-import ProjectsScene from "./scenes/ProjectsScene";
+import AudioManager from "./audio/AudioManager";
+import ContactScene from "./scenes/ContactScene";
+import ProjectsScene, {
+  PROJECT_SCENE_CONFIG,
+  type ProjectFilter,
+} from "./scenes/ProjectsScene";
+import type { ProjectItem } from "./data/projects";
 
-import ScrollManager from "./core/ScrollManager";
+import ScrollManager, {
+  EXPERIENCE_SCROLL_CONFIG,
+} from "./core/ScrollManager";
+import {
+  getQualityPixelRatio,
+  getQualitySettings,
+} from "./core/quality";
 import SceneTransition from "./core/SceneTransition";
+import WorldInteractionManager from "./core/WorldInteractionManager";
+import WorldScene, {
+  WORLD_SCENE_CONFIG,
+  type WorldSelection,
+} from "./scenes/WorldScene";
+import {
+  ensureVisualDebugController,
+  getVisualDebugStateFromEvent,
+  readVisualDebugState,
+  type VisualDebugState,
+} from "./core/visualDebug";
 
-function ExperienceCanvas() {
-  const containerRef = useRef<HTMLDivElement>(null);
+export type ExperienceSceneSection =
+  | "home"
+  | "projects";
+
+export type ExperienceCanvasHandle = {
+  navigateTo: (
+    section: ExperienceSceneSection | "contact" | "world",
+  ) => void;
+};
+
+type ExperienceNavigationSection =
+  | ExperienceSceneSection
+  | "contact"
+  | "world";
+
+type ExperienceCanvasProps = {
+  projectFilter: ProjectFilter;
+  audioManager: AudioManager;
+  initialSection: ExperienceNavigationSection;
+  onSceneSectionChange: (section: ExperienceSceneSection) => void;
+  onWorldSelectionChange: (selection: WorldSelection | null) => void;
+  onProjectSelect: (project: ProjectItem) => void;
+};
+
+const ExperienceCanvas = forwardRef<
+  ExperienceCanvasHandle,
+  ExperienceCanvasProps
+>(function ExperienceCanvas({
+  projectFilter,
+  audioManager,
+  initialSection,
+  onSceneSectionChange,
+  onWorldSelectionChange,
+  onProjectSelect,
+}, ref) {
+  const containerRef =
+    useRef<HTMLDivElement>(null);
+
+  const projectFilterRef =
+    useRef(projectFilter);
+
+  const initialSectionRef =
+    useRef(initialSection);
+
+  const onSceneSectionChangeRef =
+    useRef(onSceneSectionChange);
+
+  const onWorldSelectionChangeRef =
+    useRef(onWorldSelectionChange);
+
+  const onProjectSelectRef =
+    useRef(onProjectSelect);
+
+  const scrollManagerRef =
+    useRef<ScrollManager | null>(null);
+
+  const pendingNavigationRef =
+    useRef<ExperienceNavigationSection | null>(null);
+
+  const lastReportedSceneSectionRef =
+    useRef<ExperienceSceneSection>("home");
+
+  useLayoutEffect(() => {
+    projectFilterRef.current = projectFilter;
+  }, [projectFilter]);
+
+  useLayoutEffect(() => {
+    initialSectionRef.current = initialSection;
+    onSceneSectionChangeRef.current = onSceneSectionChange;
+    onWorldSelectionChangeRef.current = onWorldSelectionChange;
+    onProjectSelectRef.current = onProjectSelect;
+  }, [
+    initialSection,
+    onSceneSectionChange,
+    onWorldSelectionChange,
+    onProjectSelect,
+  ]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      navigateTo: (section) => {
+        pendingNavigationRef.current = section;
+        if (section === "home" || section === "projects") {
+          scrollManagerRef.current?.navigateTo(section);
+        }
+      },
+    }),
+    [],
+  );
 
   useEffect(() => {
-    const container = containerRef.current;
+    const container =
+      containerRef.current;
 
-    if (!container) return;
+    if (!container) {
+      return;
+    }
 
     // ===================================================
     // UI ROOT
-    //
-    // É o elemento pai do canvas.
-    // Usamos ele para sincronizar HTML + WebGL.
     // ===================================================
 
     const uiRoot =
-      container.parentElement as HTMLElement | null;
+      container.parentElement as
+        | HTMLElement
+        | null;
+
+    const quality = getQualitySettings();
 
     // ===================================================
     // SCENES
     // ===================================================
 
-    const home = new HomeScene();
+    const home =
+      new HomeScene(quality);
 
-    const projects = new ProjectsScene();
+    const projects =
+      new ProjectsScene(quality);
+
+    const contact =
+      new ContactScene();
+
+    const world =
+      new WorldScene(quality);
 
     // ===================================================
-    // CAMERA
+    // CAMERAS
     // ===================================================
 
-    const camera = new THREE.PerspectiveCamera(
-      38,
-      container.clientWidth / container.clientHeight,
-      0.1,
-      100,
-    );
+    const homeCamera =
+      new THREE.PerspectiveCamera(
+        38,
+        container.clientWidth /
+          container.clientHeight,
+        0.1,
+        100,
+      );
 
-    camera.position.set(
+    homeCamera.position.set(
       0,
       2.1,
       9,
     );
 
-    // ===================================================
-    // CAMERA PATH
-    //
-    // Define o caminho da câmera:
-    //
-    // Home
-    // ↓
-    // superfície
-    // ↓
-    // mergulho
-    // ↓
-    // Projects
-    // ===================================================
+    const projectsCamera =
+      new THREE.PerspectiveCamera(
+        PROJECT_SCENE_CONFIG.cameraFov,
+        container.clientWidth /
+          container.clientHeight,
+        PROJECT_SCENE_CONFIG.cameraNear,
+        PROJECT_SCENE_CONFIG.cameraFar,
+      );
 
-    const cameraPath = new THREE.CatmullRomCurve3(
-      [
-        new THREE.Vector3(
-          0,
-          2.1,
-          9,
-        ),
-
-        new THREE.Vector3(
-          0.25,
-          2,
-          7.2,
-        ),
-
-        new THREE.Vector3(
-          -0.2,
-          1.65,
-          5.5,
-        ),
-
-        new THREE.Vector3(
-          0.15,
-          1.05,
-          4,
-        ),
-
-        new THREE.Vector3(
-          0,
-          0.45,
-          2.7,
-        ),
-
-        new THREE.Vector3(
-          0,
-          -0.25,
-          1.6,
-        ),
-
-        new THREE.Vector3(
-          0,
-          -0.9,
-          0.1,
-        ),
-
-        new THREE.Vector3(
-          0,
-          -1.05,
-          -5,
-        ),
-
-        new THREE.Vector3(
-          0,
-          -1,
-          -12,
-        ),
-
-        new THREE.Vector3(
-          0,
-          -0.9,
-          -20,
-        ),
-      ],
-      false,
-      "catmullrom",
-      0.5,
+    projectsCamera.position.set(
+      0,
+      0,
+      PROJECT_SCENE_CONFIG.cameraZ,
     );
+
+    projectsCamera.lookAt(
+      0,
+      0,
+      PROJECT_SCENE_CONFIG.cameraTargetZ,
+    );
+
+    const contactCamera =
+      new THREE.PerspectiveCamera(
+        42,
+        container.clientWidth /
+          container.clientHeight,
+        0.1,
+        100,
+      );
+    contactCamera.position.set(0, 1.55, 12);
+    contactCamera.lookAt(0, 1.1, -4);
+
+    const worldCamera =
+      new THREE.PerspectiveCamera(
+        WORLD_SCENE_CONFIG.cameraFov,
+        container.clientWidth / container.clientHeight,
+        WORLD_SCENE_CONFIG.cameraNear,
+        WORLD_SCENE_CONFIG.cameraFar,
+      );
+    worldCamera.position.set(0, 0, WORLD_SCENE_CONFIG.cameraZ);
+    worldCamera.lookAt(0, 0, 0);
+
+    // ===================================================
+    // HOME CAMERA PATH
+    // ===================================================
+
+    const cameraPath =
+      new THREE.CatmullRomCurve3(
+        [
+          new THREE.Vector3(
+            0,
+            2.1,
+            9,
+          ),
+
+          new THREE.Vector3(
+            0.25,
+            2,
+            7.2,
+          ),
+
+          new THREE.Vector3(
+            -0.2,
+            1.65,
+            5.5,
+          ),
+
+          new THREE.Vector3(
+            0.15,
+            1.05,
+            4,
+          ),
+
+          new THREE.Vector3(
+            0,
+            0.45,
+            2.7,
+          ),
+
+          new THREE.Vector3(
+            0,
+            -0.25,
+            1.6,
+          ),
+
+          new THREE.Vector3(
+            0,
+            -0.9,
+            0.1,
+          ),
+
+          new THREE.Vector3(
+            0,
+            -1.05,
+            -5,
+          ),
+
+          new THREE.Vector3(
+            0,
+            -1,
+            -12,
+          ),
+
+          new THREE.Vector3(
+            0,
+            -0.9,
+            -20,
+          ),
+        ],
+        false,
+        "catmullrom",
+        0.5,
+      );
 
     // ===================================================
     // LOOK AT PATH
-    //
-    // Define para onde a câmera olha
-    // enquanto percorre o caminho.
     // ===================================================
 
-    const lookAtPath = new THREE.CatmullRomCurve3(
-      [
-        new THREE.Vector3(
-          0,
-          1,
-          0,
-        ),
+    const lookAtPath =
+      new THREE.CatmullRomCurve3(
+        [
+          new THREE.Vector3(
+            0,
+            1,
+            0,
+          ),
 
-        new THREE.Vector3(
-          0,
-          0.95,
-          -1,
-        ),
+          new THREE.Vector3(
+            0,
+            0.95,
+            -1,
+          ),
 
-        new THREE.Vector3(
-          0,
-          0.75,
-          -2,
-        ),
+          new THREE.Vector3(
+            0,
+            0.75,
+            -2,
+          ),
 
-        new THREE.Vector3(
-          0,
-          0.4,
-          -3,
-        ),
+          new THREE.Vector3(
+            0,
+            0.4,
+            -3,
+          ),
 
-        new THREE.Vector3(
-          0,
-          0,
-          -4,
-        ),
+          new THREE.Vector3(
+            0,
+            0,
+            -4,
+          ),
 
-        new THREE.Vector3(
-          0,
-          -0.5,
-          -5,
-        ),
+          new THREE.Vector3(
+            0,
+            -0.5,
+            -5,
+          ),
 
-        new THREE.Vector3(
-          0,
-          -1,
-          -7,
-        ),
+          new THREE.Vector3(
+            0,
+            -1,
+            -7,
+          ),
 
-        new THREE.Vector3(
-          0,
-          -1,
-          -11,
-        ),
+          new THREE.Vector3(
+            0,
+            -1,
+            -11,
+          ),
 
-        new THREE.Vector3(
-          0,
-          -1,
-          -18,
-        ),
+          new THREE.Vector3(
+            0,
+            -1,
+            -18,
+          ),
 
-        new THREE.Vector3(
-          0,
-          -1,
-          -27,
-        ),
-      ],
-      false,
-      "catmullrom",
-      0.5,
-    );
+          new THREE.Vector3(
+            0,
+            -1,
+            -27,
+          ),
+        ],
+        false,
+        "catmullrom",
+        0.5,
+      );
 
+    // ===================================================
     // ===================================================
     // RENDERER
     // ===================================================
 
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      powerPreference: "high-performance",
-    });
+    const renderer =
+      new THREE.WebGLRenderer({
+        antialias: true,
+        powerPreference:
+          "high-performance",
+      });
+
+    const initialPixelRatio =
+      getQualityPixelRatio(quality);
+    renderer.domElement.dataset.qualityMode = quality.mode;
+    renderer.domElement.dataset.pixelRatio =
+      initialPixelRatio.toString();
+
+    renderer.setPixelRatio(
+      initialPixelRatio,
+    );
 
     renderer.setSize(
       container.clientWidth,
       container.clientHeight,
-    );
-
-    const initialPixelRatio = Math.min(
-      window.devicePixelRatio,
-      2,
-    );
-
-    renderer.setPixelRatio(
-      initialPixelRatio,
     );
 
     renderer.outputColorSpace =
@@ -239,7 +405,7 @@ function ExperienceCanvas() {
       1;
 
     renderer.shadowMap.enabled =
-      true;
+      quality.shadows;
 
     renderer.shadowMap.type =
       THREE.PCFSoftShadowMap;
@@ -249,12 +415,7 @@ function ExperienceCanvas() {
     );
 
     // ===================================================
-    // TRANSITION SYSTEM
-    //
-    // Home -> RenderTarget A
-    // Projects -> RenderTarget B
-    //
-    // SceneTransition mistura os dois.
+    // SCENE TRANSITION
     // ===================================================
 
     const transition =
@@ -264,12 +425,69 @@ function ExperienceCanvas() {
         initialPixelRatio,
       );
 
+    home.resizeReflection(
+      container.clientWidth,
+      container.clientHeight,
+      initialPixelRatio,
+    );
+
+    projects.resize(
+      container.clientWidth,
+      container.clientHeight,
+    );
+
     // ===================================================
-    // VIRTUAL SCROLL
+    // SCROLL
     // ===================================================
 
     const scroll =
       new ScrollManager();
+    scrollManagerRef.current = scroll;
+    scroll.setProjectsMaxOffset(
+      projects.getProjectsMaxOffset(projectFilterRef.current),
+    );
+    let activeProjectFilter: ProjectFilter = "All";
+    let visualDebug = readVisualDebugState();
+    const applyVisualDebugState = (
+      nextState: VisualDebugState,
+    ) => {
+      visualDebug = nextState;
+      if (!nextState.enabled) return;
+      scroll.setEnabled(
+        !nextState.paused &&
+          initialSectionRef.current !== "world",
+      );
+      scroll.setDebugProgress(nextState);
+    };
+    const debugController = ensureVisualDebugController();
+    const handleDebugChange = (event: Event) => {
+      const nextState = getVisualDebugStateFromEvent(event);
+      if (nextState) applyVisualDebugState(nextState);
+    };
+    window.addEventListener(
+      "unseen-debug-change",
+      handleDebugChange,
+    );
+    pendingNavigationRef.current =
+      initialSectionRef.current === "projects"
+        ? "projects"
+        : initialSectionRef.current === "contact" ||
+            initialSectionRef.current === "world"
+          ? initialSectionRef.current
+          : null;
+    lastReportedSceneSectionRef.current = "home";
+    scroll.navigateTo(
+      initialSectionRef.current === "projects"
+        ? "projects"
+        : "home",
+    );
+    scroll.setEnabled(
+      initialSectionRef.current !== "world" &&
+        !visualDebug.paused,
+    );
+    if (debugController) {
+      applyVisualDebugState(debugController.state);
+    }
 
     // ===================================================
     // POINTER
@@ -278,14 +496,21 @@ function ExperienceCanvas() {
     const pointer = {
       x: 0,
       y: 0,
-
       targetX: 0,
       targetY: 0,
+      clientX: 0,
+      clientY: 0,
+      hasMoved: false,
     };
+
+    let projectCardsEnabled = false;
 
     const handlePointerMove = (
       event: PointerEvent,
     ) => {
+      pointer.clientX = event.clientX;
+      pointer.clientY = event.clientY;
+      pointer.hasMoved = true;
       pointer.targetX =
         (
           event.clientX /
@@ -336,17 +561,51 @@ function ExperienceCanvas() {
       handlePointerUp,
     );
 
+    let projectPointerStart: { x: number; y: number } | null = null;
+    const handleProjectPointerDown = (event: PointerEvent) => {
+      if (!projectCardsEnabled || event.button !== 0) return;
+      projectPointerStart = {
+        x: event.clientX,
+        y: event.clientY,
+      };
+    };
+    const handleProjectPointerUp = (event: PointerEvent) => {
+      if (!projectPointerStart) return;
+      const pointerDistance = Math.hypot(
+        event.clientX - projectPointerStart.x,
+        event.clientY - projectPointerStart.y,
+      );
+      projectPointerStart = null;
+      if (pointerDistance > 5) return;
+
+      const project = projects.getProjectAt(
+        event.clientX,
+        event.clientY,
+        projectsCamera,
+        renderer.domElement.getBoundingClientRect(),
+      );
+      if (project) onProjectSelectRef.current(project);
+    };
+    renderer.domElement.addEventListener(
+      "pointerdown",
+      handleProjectPointerDown,
+    );
+    renderer.domElement.addEventListener(
+      "pointerup",
+      handleProjectPointerUp,
+    );
+
     // ===================================================
     // REUSABLE VECTORS
     // ===================================================
 
-    const desiredPosition =
+    const desiredHomePosition =
       new THREE.Vector3();
 
-    const desiredLookAt =
+    const desiredHomeLookAt =
       new THREE.Vector3();
 
-    const currentLookAt =
+    const currentHomeLookAt =
       new THREE.Vector3(
         0,
         1,
@@ -361,61 +620,287 @@ function ExperienceCanvas() {
       new THREE.Clock();
 
     let animationFrame = 0;
+    let lastFrameTime = 0;
+    let sceneElapsed = 0;
+    let contactProgress = 0;
+    let contactTarget = 0;
+    let contactOriginSection: ExperienceSceneSection = "home";
+    let contactReturnSection: ExperienceSceneSection | null = null;
+    const contactOriginPosition = new THREE.Vector3();
+    const contactDestinationPosition = new THREE.Vector3(0, 1.55, 12);
+    const contactOriginLookAt = new THREE.Vector3();
+    const contactDestinationLookAt = new THREE.Vector3(0, 1.1, -4);
+    const contactCameraLookAt = new THREE.Vector3();
+    let observedNavigation: ExperienceNavigationSection =
+      initialSectionRef.current === "contact" ||
+      initialSectionRef.current === "world"
+        ? "home"
+        : initialSectionRef.current;
+    let worldProgress = initialSectionRef.current === "world" ? 1 : 0;
+    let worldTarget = worldProgress;
+    let worldOriginSection: ExperienceSceneSection =
+      initialSectionRef.current === "projects" ? "projects" : "home";
+    let worldReturnSection: ExperienceNavigationSection | null = null;
+    const worldInteraction = new WorldInteractionManager(
+      renderer.domElement,
+      world,
+      worldCamera,
+      {
+        onHover: (selection) => {
+          if (uiRoot) {
+            uiRoot.dataset.cursorTarget = selection
+              ? "project"
+              : "draggable";
+          }
+        },
+        onSelect: (selection) =>
+          onWorldSelectionChangeRef.current(selection),
+      },
+    );
+    worldInteraction.setActive(initialSectionRef.current === "world");
+
 
     // ===================================================
-    // ANIMATION LOOP
+    // ANIMATION
     // ===================================================
 
-    const animate = () => {
-      const elapsed =
-        clock.getElapsedTime();
+    const frameInterval = 1000 / quality.maxFps;
+    const animate = (frameTime = performance.now()) => {
+      if (frameTime - lastFrameTime < frameInterval) {
+        animationFrame = requestAnimationFrame(animate);
+        return;
+      }
+      lastFrameTime = frameTime;
+
+      const deltaSeconds =
+        clock.getDelta();
+      const motionDelta =
+        visualDebug.enabled && visualDebug.paused
+          ? 0
+          : deltaSeconds;
+
+      if (
+        !visualDebug.enabled ||
+        (!visualDebug.paused && !visualDebug.freezeTime)
+      ) {
+        sceneElapsed += deltaSeconds;
+      }
+
+      const elapsed = sceneElapsed;
 
       // -----------------------------------------------
-      // POINTER SMOOTH
+      // POINTER SMOOTHING
       // -----------------------------------------------
 
-      pointer.x +=
-        (
-          pointer.targetX -
-          pointer.x
-        ) *
-        0.035;
+      if (!visualDebug.enabled || !visualDebug.paused) {
+        pointer.x +=
+          (
+            pointer.targetX -
+            pointer.x
+          ) *
+          0.035;
 
-      pointer.y +=
-        (
-          pointer.targetY -
-          pointer.y
-        ) *
-        0.035;
+        pointer.y +=
+          (
+            pointer.targetY -
+            pointer.y
+          ) *
+          0.035;
+      }
 
       // -----------------------------------------------
-      // VIRTUAL SCROLL
+      // SCROLL
       // -----------------------------------------------
 
-      const progress =
-        scroll.update();
+      if (activeProjectFilter !== projectFilterRef.current) {
+        activeProjectFilter = projectFilterRef.current;
+        projects.setFilter(activeProjectFilter, elapsed);
+        scroll.setProjectsMaxOffset(
+          projects.getProjectsMaxOffset(activeProjectFilter),
+        );
+      }
+      const scrollState = scroll.update(motionDelta);
+
+      const requestedNavigation = pendingNavigationRef.current;
+      if (
+        requestedNavigation &&
+        requestedNavigation !== observedNavigation
+      ) {
+        if (requestedNavigation === "world") {
+          worldOriginSection =
+            scrollState.phase === "projects" ||
+            scrollState.transitionProgress >= 0.5
+              ? "projects"
+              : "home";
+          worldTarget = 1;
+          worldReturnSection = null;
+          contactTarget = 0;
+          contactProgress = 0;
+          scroll.setEnabled(false);
+          worldInteraction.setActive(true);
+          onWorldSelectionChangeRef.current(null);
+        } else if (requestedNavigation === "contact") {
+          if (observedNavigation === "world") {
+            worldTarget = 0;
+            worldInteraction.setActive(false);
+          }
+          contactOriginSection =
+            scrollState.phase === "projects" ||
+            scrollState.transitionProgress >= 0.5
+              ? "projects"
+              : "home";
+          const originCamera =
+            contactOriginSection === "projects"
+              ? projectsCamera
+              : homeCamera;
+          contactOriginPosition.copy(originCamera.position);
+          originCamera.getWorldDirection(contactOriginLookAt);
+          contactOriginLookAt
+            .multiplyScalar(10)
+            .add(originCamera.position);
+          contactTarget = 1;
+          contactReturnSection = null;
+        } else if (observedNavigation === "world") {
+          worldTarget = 0;
+          worldReturnSection = requestedNavigation;
+          worldInteraction.setActive(false);
+        } else if (observedNavigation === "contact") {
+          contactTarget = 0;
+          contactReturnSection = requestedNavigation;
+        } else {
+          scroll.navigateTo(requestedNavigation);
+        }
+        observedNavigation = requestedNavigation;
+      }
+
+      const worldDamping =
+        1 - Math.exp(-3.6 * Math.max(0, motionDelta));
+      worldProgress += (worldTarget - worldProgress) * worldDamping;
+      if (Math.abs(worldTarget - worldProgress) < 0.0001) {
+        worldProgress = worldTarget;
+      }
+      if (worldProgress > 0 || worldTarget > 0) {
+        worldInteraction.update(motionDelta, elapsed);
+      }
+
+      if (worldProgress === 0 && worldReturnSection) {
+        const destination = worldReturnSection;
+        worldReturnSection = null;
+        if (destination === "contact") {
+          scroll.setEnabled(true);
+          pendingNavigationRef.current = "contact";
+          observedNavigation = "world";
+        } else if (
+          destination === "home" ||
+          destination === "projects"
+        ) {
+          scroll.setEnabled(true);
+          scroll.navigateTo(destination);
+          pendingNavigationRef.current = destination;
+        }
+      }
+
+      const contactDamping =
+        1 - Math.exp(-3.8 * Math.max(0, motionDelta));
+      contactProgress +=
+        (contactTarget - contactProgress) * contactDamping;
+      if (Math.abs(contactTarget - contactProgress) < 0.0001) {
+        contactProgress = contactTarget;
+      }
+
+      if (
+        contactProgress === 0 &&
+        contactReturnSection
+      ) {
+        scroll.setEnabled(true);
+        scroll.navigateTo(contactReturnSection);
+        pendingNavigationRef.current = contactReturnSection;
+        contactReturnSection = null;
+      }
+
+      const contactSmoothProgress =
+        contactProgress * contactProgress *
+        (3 - 2 * contactProgress);
+      const contactPathPosition = desiredHomePosition
+        .copy(contactOriginPosition)
+        .lerp(contactDestinationPosition, contactSmoothProgress);
+      contactPathPosition.y +=
+        Math.sin(Math.PI * contactSmoothProgress) * 1.1;
+      if (visualDebug.enabled && visualDebug.paused) {
+        contactCamera.position.copy(contactPathPosition);
+      } else {
+        contactCamera.position.lerp(contactPathPosition, 0.18);
+      }
+      contactCameraLookAt
+        .copy(contactOriginLookAt)
+        .lerp(contactDestinationLookAt, contactSmoothProgress);
+      contactCamera.lookAt(contactCameraLookAt);
+      contact.update(elapsed);
+
+      const sceneSection: ExperienceSceneSection =
+        scrollState.phase === "projects"
+          ? "projects"
+          : "home";
+
+      const pendingNavigation =
+        pendingNavigationRef.current;
+      const reachedRequestedScene =
+        pendingNavigation === "home"
+          ? scrollState.phase === "home"
+          : pendingNavigation === "projects"
+            ? scrollState.phase === "projects" &&
+              scrollState.transitionProgress >= 1
+            : true;
+
+      if (
+        reachedRequestedScene &&
+        (sceneSection === "home" &&
+          scrollState.phase === "home") ||
+        (reachedRequestedScene &&
+          sceneSection === "projects" &&
+          scrollState.transitionProgress >= 1)
+      ) {
+        if (pendingNavigation === sceneSection) {
+          pendingNavigationRef.current = null;
+        }
+        if (
+          sceneSection !==
+          lastReportedSceneSectionRef.current
+        ) {
+          lastReportedSceneSectionRef.current = sceneSection;
+          onSceneSectionChangeRef.current(sceneSection);
+        }
+      }
+
+      audioManager.updateTransition(
+        contactProgress > 0
+          ? contactProgress
+          : scrollState.transitionProgress,
+        contactProgress > 0
+          ? contactProgress >= 0.999
+          : scrollState.phase === "projects",
+      );
 
       // =================================================
-      // DOM + WEBGL SYNC
-      //
-      // O mesmo scroll que move a câmera
-      // controla a interface HTML.
+      // UI SYNCHRONIZATION
       // =================================================
 
       const homeUiOpacity =
         1 -
         THREE.MathUtils.smoothstep(
-          progress,
-          0.27,
-          0.46,
+          scrollState.homeProgress,
+          EXPERIENCE_SCROLL_CONFIG.homeUiFadeStart,
+          1,
         );
 
       const projectsUiOpacity =
-        THREE.MathUtils.smoothstep(
-          progress,
-          0.52,
-          0.68,
-        );
+        scrollState.phase === "home"
+          ? 0
+          : THREE.MathUtils.smoothstep(
+              scrollState.transitionProgress,
+              EXPERIENCE_SCROLL_CONFIG.projectsUiFadeStart,
+              1,
+            );
 
       const homeUiY =
         (
@@ -432,6 +917,16 @@ function ExperienceCanvas() {
         28;
 
       if (uiRoot) {
+        const projectsEndProgress =
+          projects.getEndSectionProgress(
+            scrollState.projectsCurrentOffset,
+          );
+        const projectsHelloProgress =
+          THREE.MathUtils.smoothstep(
+            projectsEndProgress,
+            0.42,
+            0.88,
+          );
         uiRoot.style.setProperty(
           "--home-ui-opacity",
           homeUiOpacity.toFixed(4),
@@ -439,234 +934,298 @@ function ExperienceCanvas() {
 
         uiRoot.style.setProperty(
           "--projects-ui-opacity",
-          projectsUiOpacity.toFixed(4),
+          projectsUiOpacity.toFixed(
+            4,
+          ),
         );
 
         uiRoot.style.setProperty(
           "--home-ui-y",
-          `${homeUiY.toFixed(2)}px`,
+          `${homeUiY.toFixed(
+            2,
+          )}px`,
         );
 
         uiRoot.style.setProperty(
           "--projects-ui-y",
-          `${projectsUiY.toFixed(2)}px`,
+          `${projectsUiY.toFixed(
+            2,
+          )}px`,
+        );
+        uiRoot.style.setProperty(
+          "--projects-end-progress",
+          projectsEndProgress.toFixed(4),
+        );
+        uiRoot.style.setProperty(
+          "--projects-content-opacity",
+          (1 - projectsEndProgress).toFixed(4),
+        );
+        uiRoot.style.setProperty(
+          "--projects-hello-progress",
+          projectsHelloProgress.toFixed(4),
+        );
+        uiRoot.style.setProperty(
+          "--projects-hello-y",
+          `${((1 - projectsHelloProgress) * 12).toFixed(2)}px`,
         );
 
-        if (progress < 0.46) {
-          uiRoot.dataset.scene =
-            "home";
-        } else if (
-          progress < 0.68
-        ) {
-          uiRoot.dataset.scene =
-            "transition";
-        } else {
-          uiRoot.dataset.scene =
-            "projects";
+        uiRoot.dataset.scene =
+          scrollState.phase;
+        uiRoot.dataset.projectsEndProgress =
+          projectsEndProgress.toFixed(4);
+        uiRoot.dataset.projectsEnded =
+          projectsEndProgress >= 0.999 ? "true" : "false";
+        if (visualDebug.enabled) {
+          uiRoot.dataset.debugReady = "true";
+          uiRoot.dataset.projectCount =
+            projects.getProjectCount().toString();
+          uiRoot.dataset.projectsOffset =
+            scrollState.projectsCurrentOffset.toFixed(4);
+          uiRoot.dataset.projectsTargetOffset =
+            scrollState.projectsTargetOffset.toFixed(4);
+          uiRoot.dataset.projectsMaxOffset =
+            scrollState.projectsMaxOffset.toFixed(4);
+          uiRoot.dataset.projectRows =
+            projects.getProjectRowCount(projectFilterRef.current).toString();
+          uiRoot.dataset.projectsCameraZ =
+            projectsCamera.position.z.toFixed(4);
         }
       }
 
-      // -----------------------------------------------
-      // CAMERA POSITION
-      // -----------------------------------------------
+      // =================================================
+      // HOME CAMERA
+      // =================================================
 
       cameraPath.getPointAt(
-        progress,
-        desiredPosition,
+        scrollState.homeCameraPathProgress,
+        desiredHomePosition,
       );
-
-      // -----------------------------------------------
-      // CAMERA LOOK AT
-      // -----------------------------------------------
 
       lookAtPath.getPointAt(
-        progress,
-        desiredLookAt,
+        scrollState.homeCameraPathProgress,
+        desiredHomeLookAt,
       );
 
-      // -----------------------------------------------
-      // PARALLAX
-      //
-      // O mouse interfere cada vez menos
-      // conforme a câmera mergulha.
-      // -----------------------------------------------
+      // =================================================
+      // HOME PARALLAX
+      // =================================================
+
+      const transitionParallaxReduction =
+        THREE.MathUtils.smoothstep(
+          scrollState.transitionProgress,
+          EXPERIENCE_SCROLL_CONFIG.homeParallaxFadeStart,
+          1,
+        );
 
       const parallaxStrength =
-        1 -
-        progress *
-          0.72;
+        THREE.MathUtils.lerp(
+          1,
+          EXPERIENCE_SCROLL_CONFIG.homeParallaxEndStrength,
+          transitionParallaxReduction,
+        );
 
-      desiredPosition.x +=
+      desiredHomePosition.x +=
         pointer.x *
         0.55 *
         parallaxStrength;
 
-      desiredPosition.y -=
+      desiredHomePosition.y -=
         pointer.y *
         0.28 *
         parallaxStrength;
 
-      // -----------------------------------------------
+      // =================================================
       // CLICK & HOLD
-      // -----------------------------------------------
+      //
+      // O efeito desaparece quando chegamos
+      // em Projects para não provocar zoom.
+      // =================================================
 
-      holdProgress +=
-        (
+      if (!visualDebug.enabled || !visualDebug.paused) {
+        holdProgress +=
           (
-            holding
-              ? 1
-              : 0
-          ) -
-          holdProgress
-        ) *
-        0.055;
+            (
+              holding
+                ? 1
+                : 0
+            ) -
+            holdProgress
+          ) *
+          0.055;
+      }
 
-      desiredPosition.z -=
+      const holdHomeStrength =
+        1 -
+        scrollState.transitionProgress;
+
+      desiredHomePosition.z -=
         holdProgress *
-        0.45;
-
-      // -----------------------------------------------
-      // CAMERA SMOOTHING
-      // -----------------------------------------------
-
-      camera.position.lerp(
-        desiredPosition,
-        0.075,
-      );
-
-      currentLookAt.lerp(
-        desiredLookAt,
-        0.07,
-      );
-
-      camera.lookAt(
-        currentLookAt,
-      );
-
-      // -----------------------------------------------
-      // FIELD OF VIEW
-      // -----------------------------------------------
-
-      const projectsFovProgress =
-  THREE.MathUtils.smoothstep(
-    progress,
-    0.52,
-    0.72,
-  );
-
-const baseFov =
-  THREE.MathUtils.lerp(
-    38,
-    43,
-    projectsFovProgress,
-  );
-
-const targetFov =
-  baseFov -
-  holdProgress * 3;
-
-      camera.fov +=
-        (
-          targetFov -
-          camera.fov
-        ) *
-        0.05;
-
-      camera.updateProjectionMatrix();
+        0.45 *
+        holdHomeStrength;
 
       // =================================================
-      // HOME → PROJECTS TRANSITION
+      // HOME CAMERA SMOOTHING
       // =================================================
 
-      const transitionStart =
-        0.36;
-
-      const transitionEnd =
-        0.58;
-
-      const transitionProgress =
-        THREE.MathUtils.clamp(
-          (
-            progress -
-            transitionStart
-          ) /
-            (
-              transitionEnd -
-              transitionStart
-            ),
-          0,
-          1,
+      if (visualDebug.enabled && visualDebug.paused) {
+        homeCamera.position.copy(desiredHomePosition);
+        currentHomeLookAt.copy(desiredHomeLookAt);
+      } else {
+        homeCamera.position.lerp(
+          desiredHomePosition,
+          0.075,
         );
 
-      // =================================================
-      // PROJECTS PROGRESS
-      // =================================================
-
-      const projectProgress =
-        THREE.MathUtils.clamp(
-          (
-            progress -
-            transitionEnd
-          ) /
-            (
-              1 -
-              transitionEnd
-            ),
-          0,
-          1,
+        currentHomeLookAt.lerp(
+          desiredHomeLookAt,
+          0.07,
         );
+      }
 
-      // -----------------------------------------------
-      // UPDATE HOME
-      // -----------------------------------------------
-
-      home.update(
-        elapsed,
-        pointer.x,
-        pointer.y,
-        holding,
+      homeCamera.lookAt(
+        currentHomeLookAt,
       );
 
-      // -----------------------------------------------
-      // UPDATE PROJECTS
-      //
-      // ProjectsScene.update recebe:
-      //
-      // 1. tempo
-      // 2. progresso
-      // 3. velocidade do scroll
-      // -----------------------------------------------
+      // =================================================
+      // HOME FOV
+      // =================================================
+
+      const targetFov =
+        38 -
+        holdProgress *
+          3 *
+          holdHomeStrength;
+
+      if (visualDebug.enabled && visualDebug.paused) {
+        homeCamera.fov = targetFov;
+      } else {
+        homeCamera.fov +=
+          (
+            targetFov -
+            homeCamera.fov
+          ) *
+          0.05;
+      }
+
+      homeCamera.updateProjectionMatrix();
+
+      // =================================================
+      // HOME UPDATE
+      // =================================================
+
+      const homeVisible =
+        scrollState.transitionProgress < 0.999 ||
+        ((worldProgress > 0.001 || worldTarget > 0.001) &&
+          worldOriginSection === "home") ||
+        ((contactProgress > 0.001 || contactTarget > 0.001) &&
+          contactOriginSection === "home");
+      if (homeVisible) {
+        home.update(
+          elapsed,
+          pointer.x,
+          pointer.y,
+          holding,
+          homeCamera,
+          visualDebug.enabled && visualDebug.freezeParticles,
+        );
+        home.renderReflection(
+          renderer,
+          homeCamera,
+        );
+      }
+
+      // =================================================
+      // PROJECTS UPDATE
+      // =================================================
 
       projects.update(
         elapsed,
-        projectProgress,
-        scroll.velocity,
+        scrollState.projectsOffset,
+        scrollState.scrollVelocity,
+        visualDebug.enabled && visualDebug.freezeParticles,
       );
+      projectCardsEnabled =
+        scrollState.phase === "projects" &&
+        scrollState.transitionProgress >= 1 &&
+        contactProgress <= 0 &&
+        worldProgress <= 0;
+
+      if (uiRoot) {
+        const overProject =
+          scrollState.phase === "projects" &&
+          pointer.hasMoved &&
+          projects.isProjectAt(
+            pointer.clientX,
+            pointer.clientY,
+            projectsCamera,
+            renderer.domElement.getBoundingClientRect(),
+          );
+        uiRoot.dataset.cursorTarget = overProject
+          ? "project"
+          : "draggable";
+      }
 
       // =================================================
       // FINAL RENDER
-      //
-      // IMPORTANTE:
-      // Não fazemos uma troca seca:
-      //
-      // renderer.render(home)
-      // renderer.render(projects)
-      //
-      // SceneTransition mistura as cenas.
       // =================================================
 
-      transition.render(
-        renderer,
-        home.scene,
-        projects.scene,
-        camera,
-        transitionProgress,
-        elapsed,
-      );
+      if (worldProgress > 0 || worldTarget > 0) {
+        const originScene =
+          worldOriginSection === "projects"
+            ? projects.scene
+            : home.scene;
+        const originCamera =
+          worldOriginSection === "projects"
+            ? projectsCamera
+            : homeCamera;
+        const exitingWorld = worldTarget === 0;
 
-      // -----------------------------------------------
-      // NEXT FRAME
-      // -----------------------------------------------
+        transition.render(
+          renderer,
+          exitingWorld ? world.scene : originScene,
+          exitingWorld ? worldCamera : originCamera,
+          exitingWorld ? originScene : world.scene,
+          exitingWorld ? originCamera : worldCamera,
+          exitingWorld ? 1 - worldProgress : worldProgress,
+          elapsed,
+          scrollState.scrollVelocity,
+          scrollState.direction,
+        );
+      } else if (contactProgress > 0 || contactTarget > 0) {
+        const originScene =
+          contactOriginSection === "projects"
+            ? projects.scene
+            : home.scene;
+        const originCamera =
+          contactOriginSection === "projects"
+            ? projectsCamera
+            : homeCamera;
+        const exitingContact = contactTarget === 0;
+
+        transition.render(
+          renderer,
+          exitingContact ? contact.scene : originScene,
+          exitingContact ? contactCamera : originCamera,
+          exitingContact ? originScene : contact.scene,
+          exitingContact ? originCamera : contactCamera,
+          exitingContact ? 1 - contactProgress : contactProgress,
+          elapsed,
+          scrollState.scrollVelocity,
+          scrollState.direction,
+        );
+      } else {
+        transition.render(
+          renderer,
+          home.scene,
+          homeCamera,
+          projects.scene,
+          projectsCamera,
+          scrollState.transitionProgress,
+          elapsed,
+          scrollState.scrollVelocity,
+          scrollState.direction,
+        );
+      }
 
       animationFrame =
         requestAnimationFrame(
@@ -687,33 +1246,55 @@ const targetFov =
 
         const height =
           container.clientHeight;
+        if (width <= 0 || height <= 0) return;
 
         const pixelRatio =
-          Math.min(
-            window.devicePixelRatio,
-            2,
-          );
+          getQualityPixelRatio(quality);
+        renderer.domElement.dataset.pixelRatio =
+          pixelRatio.toString();
 
-        // Camera
-
-        camera.aspect =
+        const aspect =
           width /
           height;
 
-        camera.updateProjectionMatrix();
+        homeCamera.aspect =
+          aspect;
 
-        // Renderer
+        homeCamera.updateProjectionMatrix();
+
+        projectsCamera.aspect =
+          aspect;
+
+        projectsCamera.updateProjectionMatrix();
+
+        contactCamera.aspect = aspect;
+        contactCamera.updateProjectionMatrix();
+
+        worldCamera.aspect = aspect;
+        worldCamera.updateProjectionMatrix();
+
+        renderer.setPixelRatio(
+          pixelRatio,
+        );
 
         renderer.setSize(
           width,
           height,
         );
 
-        renderer.setPixelRatio(
+        home.resizeReflection(
+          width,
+          height,
           pixelRatio,
         );
 
-        // RenderTargets
+        projects.resize(
+          width,
+          height,
+        );
+        scroll.setProjectsMaxOffset(
+          projects.getProjectsMaxOffset(projectFilterRef.current),
+        );
 
         transition.resize(
           width,
@@ -722,10 +1303,18 @@ const targetFov =
         );
       };
 
-    window.addEventListener(
-      "resize",
-      handleResize,
-    );
+    let resizeFrame = 0;
+    const scheduleResize = () => {
+      if (resizeFrame !== 0) return;
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = 0;
+        handleResize();
+      });
+    };
+    const resizeObserver = new ResizeObserver(scheduleResize);
+    resizeObserver.observe(container);
+    window.addEventListener("resize", scheduleResize);
+    window.addEventListener("orientationchange", scheduleResize);
 
     // ===================================================
     // CLEANUP
@@ -735,10 +1324,18 @@ const targetFov =
       cancelAnimationFrame(
         animationFrame,
       );
+      if (resizeFrame !== 0) {
+        cancelAnimationFrame(resizeFrame);
+      }
+      resizeObserver.disconnect();
 
       window.removeEventListener(
         "resize",
-        handleResize,
+        scheduleResize,
+      );
+      window.removeEventListener(
+        "orientationchange",
+        scheduleResize,
       );
 
       window.removeEventListener(
@@ -756,23 +1353,50 @@ const targetFov =
         handlePointerUp,
       );
 
+      renderer.domElement.removeEventListener(
+        "pointerdown",
+        handleProjectPointerDown,
+      );
+      renderer.domElement.removeEventListener(
+        "pointerup",
+        handleProjectPointerUp,
+      );
+      window.removeEventListener(
+        "unseen-debug-change",
+        handleDebugChange,
+      );
+
       scroll.dispose();
+      scrollManagerRef.current = null;
+      worldInteraction.dispose();
 
       home.dispose();
 
       projects.dispose();
 
+      contact.dispose();
+
+      world.dispose();
+
       transition.dispose();
 
       renderer.dispose();
 
-      // -----------------------------------------------
-      // REMOVE CSS VARIABLES
-      // -----------------------------------------------
-
       if (uiRoot) {
         uiRoot.style.removeProperty(
           "--home-ui-opacity",
+        );
+        uiRoot.style.removeProperty(
+          "--projects-end-progress",
+        );
+        uiRoot.style.removeProperty(
+          "--projects-content-opacity",
+        );
+        uiRoot.style.removeProperty(
+          "--projects-hello-progress",
+        );
+        uiRoot.style.removeProperty(
+          "--projects-hello-y",
         );
 
         uiRoot.style.removeProperty(
@@ -788,11 +1412,8 @@ const targetFov =
         );
 
         delete uiRoot.dataset.scene;
+        delete uiRoot.dataset.cursorTarget;
       }
-
-      // -----------------------------------------------
-      // REMOVE CANVAS
-      // -----------------------------------------------
 
       if (
         renderer.domElement
@@ -804,15 +1425,16 @@ const targetFov =
         );
       }
     };
-  }, []);
+  }, [audioManager]);
 
   return (
     <div
       ref={containerRef}
       className="experience-canvas"
+      data-cursor="draggable"
       aria-hidden="true"
     />
   );
-}
+});
 
 export default ExperienceCanvas;
