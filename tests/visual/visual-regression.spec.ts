@@ -194,6 +194,7 @@ test("Projects has a finite 20-item gallery and reveals its end section", async 
 });
 
 test("Projects scroll reaches its real end and reverses to Home", async ({ page }) => {
+  test.setTimeout(60_000);
   await page.goto(debugQuery());
   const root = page.locator("[data-debug-ready='true']");
   await page.mouse.wheel(0, 10_000);
@@ -204,10 +205,12 @@ test("Projects scroll reaches its real end and reverses to Home", async ({ page 
   const maximumOffset = Number(
     await root.getAttribute("data-projects-max-offset"),
   );
-  const endOffset = Number(
+  await expect.poll(async () => Number(
     await root.getAttribute("data-projects-offset"),
-  );
-  expect(endOffset).toBeCloseTo(maximumOffset, 2);
+  )).toBeCloseTo(maximumOffset, 2);
+  await expect(root).toHaveAttribute("data-dive-progress", "1.0000");
+  await expect.poll(async () => Number(await root.getAttribute("data-projects-camera-z")))
+    .toBeCloseTo(-17, 3);
   const cameraZAtEnd = await root.getAttribute("data-projects-camera-z");
 
   await page.mouse.wheel(0, -10_000);
@@ -215,5 +218,7 @@ test("Projects scroll reaches its real end and reverses to Home", async ({ page 
     timeout: 15_000,
   });
   expect(Number(await root.getAttribute("data-projects-offset"))).toBe(0);
-  expect(await root.getAttribute("data-projects-camera-z")).toBe(cameraZAtEnd);
+  await expect(root).toHaveAttribute("data-dive-progress", "0.0000");
+  await expect.poll(() => root.getAttribute("data-projects-camera-z"))
+    .toBe(cameraZAtEnd);
 });

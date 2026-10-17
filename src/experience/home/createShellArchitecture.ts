@@ -1,4 +1,4 @@
-﻿import * as THREE from "three";
+import * as THREE from "three";
 import type { QualitySettings } from "../core/quality";
 import { addSubtleCaustics } from "./createCaustics";
 import { createMineralClusters } from "./createMineralClusters";
@@ -20,21 +20,13 @@ export function createShellArchitecture(
   const segments = quality.mode === "high" ? 80 : quality.mode === "medium" ? 56 : 32;
   const project = createFacadeProjector();
   const pearl = new THREE.MeshPhysicalMaterial({
-    name: "carved ivory pearl", color: "#F5EFEB", roughness: 0.34,
-    metalness: 0, clearcoat: 0.1, clearcoatRoughness: 0.36,
+    name: "carved ivory pearl", color: "#F5EFEB", roughness: 0.46,
+    metalness: 0, clearcoat: 0.035, clearcoatRoughness: 0.36,
     ior: 1.45, iridescence: 0.06, iridescenceIOR: 1.25, iridescenceThicknessRange: [180, 360],
-    sheen: 0.18, sheenRoughness: 0.55, sheenColor: new THREE.Color("#E9E2F0"),
+    sheen: 0.1, sheenRoughness: 0.55, sheenColor: new THREE.Color("#E9E2F0"),
     envMapIntensity: 0.5, vertexColors: true,
     emissive: "#FFEBDD", emissiveIntensity: 0.08,
   });
-  const roughStone = pearl.clone();
-  roughStone.name = "partially carved marble foundations";
-  roughStone.color.set("#E4DEE3");
-  roughStone.roughness = 0.62;
-  roughStone.clearcoat = 0;
-  roughStone.iridescence = 0.01;
-  roughStone.sheen = 0.05;
-  roughStone.emissiveIntensity = 0.05;
   const seamMaterial = new THREE.MeshStandardMaterial({
     name: "recessed dawn light", color: "#FFE0B5", emissive: "#FFD29E",
     emissiveIntensity: 0.65, roughness: 0.5, toneMapped: true,
@@ -45,9 +37,9 @@ export function createShellArchitecture(
   stairStone.clearcoat = 0.02;
   stairStone.iridescence = 0.02;
   stairStone.emissiveIntensity = 0.05;
-  materials.push(pearl, roughStone, stairStone, seamMaterial);
+  materials.push(pearl, stairStone, seamMaterial);
   addSubtleCaustics(pearl, time, quality.mode === "low" ? 0 : 0.025);
-  for (const material of [pearl, roughStone, stairStone, seamMaterial]) {
+  for (const material of [pearl, stairStone, seamMaterial]) {
     const previousCompile = material.onBeforeCompile;
     const previousKey = material.customProgramCacheKey();
     material.onBeforeCompile = (shader, renderer) => {
@@ -59,7 +51,7 @@ export function createShellArchitecture(
         .replace("#include <clipping_planes_fragment>", `#include <clipping_planes_fragment>
           if (vSanctuaryPosition.y < 0.16) discard;`);
       if (material instanceof THREE.MeshPhysicalMaterial && quality.mode !== "low") {
-        const strength = material === roughStone ? 0.08 : 0.04;
+        const strength = 0.04;
         shader.fragmentShader = `
           float sanctuaryMineralHash(vec2 p) {
             return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -95,11 +87,11 @@ export function createShellArchitecture(
         shader.fragmentShader = shader.fragmentShader.replace("#include <emissivemap_fragment>",
           `#include <emissivemap_fragment>
           float pearlFresnel = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 3.0);
-          totalEmissiveRadiance += vec3(0.93, 0.92, 1.0) * pearlFresnel * ${material === roughStone ? "0.01" : "0.03"};`);
+          totalEmissiveRadiance += vec3(0.93, 0.92, 1.0) * pearlFresnel * 0.03;`);
       }
     };
     material.customProgramCacheKey = () =>
-      `${previousKey}-sanctuary-waterline-${quality.mode}-${material === roughStone ? "raw" : "honed"}`;
+      `${previousKey}-sanctuary-waterline-${quality.mode}-${material.name}`;
   }
 
   const add = (geometry: THREE.BufferGeometry, material: THREE.Material, name: string,
@@ -162,7 +154,6 @@ export function createShellArchitecture(
   sanctuary.add(steps);
   // Concept: top at 63% of frame, waterline at 71%, width about 52%.
   // Short treads produce a horizontal stair, rather than a receding stone ramp.
-  // Four broad, low treads read as a carved ceremonial stair rather than slats.
   // Six low treads recede in z; the lowest sits at the waterline and the last is a deeper landing.
   const levels = 6;
   for (let level = 0; level < levels; level++) {
@@ -199,15 +190,5 @@ export function createShellArchitecture(
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(0, -0.28, -10);
   floor.castShadow = false;
-  // The existing final scene target has no depth buffer and water draws at 2.
-  // Paint the above-water architecture back-to-front after it. Reflection and
-  // refraction targets retain their ordinary depth tests. The basin stays first.
-  sanctuary.updateMatrixWorld(true);
-  sanctuary.traverse((object) => {
-    if (!(object instanceof THREE.Mesh) || object === floor) return;
-    object.geometry.computeBoundingSphere();
-    const center = object.geometry.boundingSphere!.center.clone().applyMatrix4(object.matrixWorld);
-    object.renderOrder = 3 + (center.z + 30) * 0.1;
-  });
   return sanctuary;
 }

@@ -4,6 +4,10 @@ import transitionVertexShader from "../shaders/transitionVertex";
 import transitionFragmentShader from "../shaders/transitionFragment";
 import postProcessVertexShader from "../shaders/postProcessVertex";
 import postProcessFragmentShader from "../shaders/postProcessFragment";
+import navigationFragmentShader from "../shaders/navigationFragment";
+import { DiveParticles } from "../dive/DiveParticles";
+import type { DiveState } from "../dive/diveTimeline";
+import type { QualityMode } from "./quality";
 
 export const DEBUG_POST_PROCESSING = {
   grain: true,
@@ -24,6 +28,11 @@ class SceneTransition {
   private readonly transitionCamera: THREE.OrthographicCamera;
 
   private readonly transitionMaterial: THREE.ShaderMaterial;
+  private readonly navigationMaterial: THREE.ShaderMaterial;
+  private readonly transitionQuad: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  private readonly diveParticles: DiveParticles;
+  private diveState: DiveState | null = null;
+  private reducedMotion = false;
 
   private readonly postProcessScene: THREE.Scene;
 
@@ -37,6 +46,7 @@ class SceneTransition {
     width: number,
     height: number,
     pixelRatio: number,
+    qualityMode: QualityMode = "high",
   ) {
     // =====================================================
     // TAMANHO DOS RENDER TARGETS
@@ -78,6 +88,7 @@ class SceneTransition {
         targetHeight,
         {
           depthBuffer: true,
+          depthTexture: new THREE.DepthTexture(targetWidth, targetHeight, THREE.UnsignedIntType),
         },
       );
 
@@ -88,7 +99,7 @@ class SceneTransition {
       targetWidth,
       targetHeight,
       {
-        depthBuffer: false,
+        depthBuffer: true,
       },
     );
     this.finalTarget.texture.colorSpace = THREE.SRGBColorSpace;
@@ -168,8 +179,22 @@ class SceneTransition {
           uDirection: {
             value: 0,
           },
+          uProjectsDepth: { value: this.projectsTarget.depthTexture },
+          uProjectsClip: { value: new THREE.Vector2(0.1, 100) },
+          uDive: { value: new THREE.Vector4() },
+          uWaterline: { value: -0.12 },
+          uMotionScale: { value: 1 },
+          uQuality: { value: qualityMode === "high" ? 2 : qualityMode === "medium" ? 1 : 0 },
+          uPointer: { value: new THREE.Vector4(0.5, 0.5, 0, 0) },
         },
       });
+    // Keep Contact/World navigation on its approved shader and timeline.
+    this.navigationMaterial = new THREE.ShaderMaterial({
+      vertexShader: transitionVertexShader, fragmentShader: navigationFragmentShader,
+      depthTest: false, depthWrite: false,
+      uniforms: this.transitionMaterial.uniforms,
+    });
+    this.diveParticles = new DiveParticles(qualityMode, this.finalTarget.texture, this.resolution);
 
     this.postProcessScene = new THREE.Scene();
     this.postProcessMaterial = new THREE.ShaderMaterial({
@@ -210,6 +235,7 @@ class SceneTransition {
       this.quadGeometry,
       this.transitionMaterial,
     );
+    this.transitionQuad = quad;
 
     this.transitionScene.add(quad);
     const postProcessQuad = new THREE.Mesh(
@@ -217,6 +243,15 @@ class SceneTransition {
       this.postProcessMaterial,
     );
     this.postProcessScene.add(postProcessQuad);
+  }
+
+  setDiveState(state: DiveState, waterline: number, pointer: THREE.Vector4, reducedMotion: boolean) {
+    this.diveState = state;
+    this.reducedMotion = reducedMotion;
+    this.transitionMaterial.uniforms.uDive.value.set(state.contact, state.immersion, state.arrival, state.wet);
+    this.transitionMaterial.uniforms.uWaterline.value = waterline;
+    this.transitionMaterial.uniforms.uMotionScale.value = reducedMotion ? 0.22 : 1;
+    this.transitionMaterial.uniforms.uPointer.value.copy(pointer);
   }
 
   // =====================================================
@@ -233,6 +268,7 @@ class SceneTransition {
     elapsed: number,
     velocity: number,
     direction: -1 | 0 | 1,
+    dive = false,
   ) {
     // ===================================================
     // ANTES DO MERGULHO
@@ -250,6 +286,7 @@ class SceneTransition {
       renderer.clear();
       renderer.render(projectsScene, projectsCamera);
     } else {
+      this.transitionQuad.material = dive ? this.transitionMaterial : this.navigationMaterial;
       renderer.setRenderTarget(this.homeTarget);
       renderer.clear();
       renderer.render(homeScene, homeCamera);
@@ -257,6 +294,9 @@ class SceneTransition {
       renderer.setRenderTarget(this.projectsTarget);
       renderer.clear();
       renderer.render(projectsScene, projectsCamera);
+      if (projectsCamera instanceof THREE.PerspectiveCamera) {
+        this.transitionMaterial.uniforms.uProjectsClip.value.set(projectsCamera.near, projectsCamera.far);
+      }
 
       this.transitionMaterial.uniforms.uProgress.value = progress;
       this.transitionMaterial.uniforms.uTime.value = elapsed;
@@ -272,6 +312,16 @@ class SceneTransition {
     this.postProcessMaterial.uniforms.uTime.value = elapsed;
     renderer.setRenderTarget(null);
     renderer.render(this.postProcessScene, this.transitionCamera);
+    if (dive && this.diveState && progress > 0 && progress < 1) {
+      this.diveParticles.update(this.diveState, elapsed, this.reducedMotion);
+      const autoClear = renderer.autoClear;
+      try {
+        renderer.autoClear = false;
+        renderer.render(this.diveParticles.scene, this.transitionCamera);
+      } finally {
+        renderer.autoClear = autoClear;
+      }
+    }
   }
 
   // =====================================================
@@ -320,11 +370,15 @@ class SceneTransition {
 
   dispose() {
     this.homeTarget.dispose();
+    this.homeTarget.depthTexture?.dispose();
 
     this.projectsTarget.dispose();
+    this.projectsTarget.depthTexture?.dispose();
     this.finalTarget.dispose();
 
     this.transitionMaterial.dispose();
+    this.navigationMaterial.dispose();
+    this.diveParticles.dispose();
     this.postProcessMaterial.dispose();
 
     this.quadGeometry.dispose();

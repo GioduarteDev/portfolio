@@ -564,6 +564,42 @@ a {
   opacity: 1;
 }
 
+.experience-cursor__wet {
+  position: absolute;
+  inset: -18px;
+  border: 1px solid rgb(216 245 245 / 26%);
+  border-radius: 48% 52% 53% 47%;
+  box-shadow: 0 0 6px rgb(205 242 239 / 12%);
+  background: radial-gradient(ellipse, transparent 50%, rgb(223 246 245 / 8%) 72%, transparent 77%);
+  opacity: calc(var(--cursor-wet, 0) * 0.65);
+  transform: scale(calc(0.9 + var(--cursor-wet, 0) * 0.1));
+}
+
+.experience-cursor__trail {
+  position: absolute;
+  inset: -5px;
+  border: 1px solid rgb(212 240 240 / 18%);
+  border-radius: 47% 53% 51% 49%;
+  opacity: calc(var(--cursor-wet, 0) * 0.35);
+}
+
+.experience-cursor__droplets {
+  position: absolute;
+  width: 2px;
+  height: 3px;
+  top: -17px;
+  left: 18px;
+  border-radius: 50%;
+  background: rgb(235 252 250 / 55%);
+  box-shadow: -28px 24px 0 -0.3px rgb(235 252 250 / 35%), 3px 23px 0 -0.4px rgb(235 252 250 / 25%);
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .experience-cursor__trail,
+  .experience-cursor__droplets { display: none; }
+}
+
 @media (pointer: coarse) {
   .experience-cursor {
     display: none;
@@ -1019,9 +1055,11 @@ a {
   }
 
   .projects-interface__intro {
+    top: 120px;
     left: 20px;
     right: 20px;
     gap: 20px;
+    transform: none;
   }
 
   .projects-interface__contact {
@@ -1032,8 +1070,9 @@ a {
     left: max(20px, env(safe-area-inset-left));
     right: max(20px, env(safe-area-inset-right));
     bottom: max(58px, calc(env(safe-area-inset-bottom) + 42px));
+    flex-direction: column;
     align-items: flex-start;
-    gap: 12px;
+    gap: 6px;
   }
 
   .projects-filter__options {

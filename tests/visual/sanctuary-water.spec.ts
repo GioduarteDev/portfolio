@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 const query = "/?debug=1&quality=low&freezeTime=1&freezeParticles=1&hideCursor=1&homeProgress=0";
 
-test("Home camera stays above water throughout the crossing", async ({ page }) => {
+test("approved Home stays above water and dive camera crosses the surface", async ({ page }) => {
   test.setTimeout(60_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -24,7 +24,7 @@ test("Home camera stays above water throughout the crossing", async ({ page }) =
     expect(Number(position![1])).toBeGreaterThan(0.25);
     expect(Number(position![2])).toBeGreaterThan(-1);
   }
-  for (const progress of [0.1, 0.35, 0.5, 0.7, 0.95]) {
+  for (const progress of [0.1, 0.30, 0.38, 0.5, 0.7, 0.95]) {
     await page.evaluate((transitionProgress) => {
       window.__UNSEEN_DEBUG__?.setState({ transitionProgress, paused: true });
     }, progress);
@@ -33,8 +33,10 @@ test("Home camera stays above water throughout the crossing", async ({ page }) =
     const text = await page.locator(".debug-hud").innerText();
     const position = text.match(/cam pos\s+[-\d.]+, ([-\d.]+), ([-\d.]+)/);
     expect(position).not.toBeNull();
-    expect(Number(position![1])).toBeGreaterThan(0.25);
-    expect(Number(position![2])).toBeGreaterThan(-1);
+    const cameraY = Number(await page.locator(".home-placeholder").getAttribute("data-dive-camera-y"));
+    if (progress <= 0.30) expect(cameraY).toBeGreaterThan(0.16);
+    if (progress >= 0.5) expect(cameraY).toBeLessThan(0.16);
+    if (progress === 0.38) expect(Math.abs(cameraY - 0.16)).toBeLessThan(0.03);
   }
   expect(errors).toEqual([]);
 });

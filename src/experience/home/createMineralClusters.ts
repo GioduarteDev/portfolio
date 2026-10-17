@@ -63,9 +63,9 @@ function createFamilyMaterial(family: Family) {
   switch (family) {
     case "sapphire":
       return new THREE.MeshPhysicalMaterial({
-        name: "sapphire", color: "#2F4B8F", roughness: 0.3, clearcoat: 0.45,
+        name: "sapphire", color: "#9296AA", roughness: 0.58, clearcoat: 0.04,
         clearcoatRoughness: 0.2, ior: 1.7, sheen: 0.3, sheenColor: new THREE.Color("#A9C4EE"),
-        sheenRoughness: 0.4, envMapIntensity: 0.7, emissive: "#1A2C5C", emissiveIntensity: 0.03,
+        sheenRoughness: 0.4, envMapIntensity: 0.7, emissive: "#555465", emissiveIntensity: 0.03,
       });
     case "amethyst":
       return new THREE.MeshPhysicalMaterial({
@@ -130,8 +130,8 @@ export function createMineralClusters(
 
     const count = quality.mode === "high" ? spec.crystals : Math.max(2, spec.crystals - 1);
     for (let i = 0; i < count; i++) {
-      const height = (0.45 + rand() * 0.75) * spec.scale * (i === 0 ? 1.25 : 1);
-      const radius = (0.06 + rand() * 0.07) * spec.scale;
+      const height = (0.35 + rand() * 0.42) * spec.scale * (i === 0 ? 1.25 : 1);
+      const radius = (0.16 + rand() * 0.14) * spec.scale;
       const geometry = createCrystalGeometry(rand, height, radius);
       geometries.push(geometry);
       const crystal = new THREE.Mesh(geometry, material);

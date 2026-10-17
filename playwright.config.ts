@@ -8,7 +8,7 @@ export default defineConfig({
   outputDir: "./test-results/playwright",
   use: {
     ...devices["Desktop Chrome"],
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:4173",
     viewport: { width: 1440, height: 900 },
     deviceScaleFactor: 1,
     reducedMotion: "reduce",
@@ -23,7 +23,7 @@ export default defineConfig({
       ],
     },
   },
-  webServer: {
+  webServer: process.env.PLAYWRIGHT_BASE_URL ? undefined : {
     command: "npm run dev -- --host 127.0.0.1 --port 4173 --strictPort",
     url: "http://127.0.0.1:4173",
     reuseExistingServer: !process.env.CI,

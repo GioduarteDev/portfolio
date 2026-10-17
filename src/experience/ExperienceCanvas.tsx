@@ -33,6 +33,8 @@ import {
   getQualitySettings,
 } from "./core/quality";
 import SceneTransition from "./core/SceneTransition";
+import { DiveCamera } from "./dive/DiveCamera";
+import { smoothRange } from "./dive/diveTimeline";
 import DebugHud from "./core/debugHud";
 import WorldInteractionManager from "./core/WorldInteractionManager";
 import WorldScene, {
@@ -155,6 +157,10 @@ const ExperienceCanvas = forwardRef<
         | null;
 
     const quality = getQualitySettings();
+    const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let reducedMotion = motionPreference.matches;
+    const handleMotionPreference = (event: MediaQueryListEvent) => { reducedMotion = event.matches; };
+    motionPreference.addEventListener("change", handleMotionPreference);
 
     // ===================================================
     // SCENES
@@ -240,7 +246,7 @@ const ExperienceCanvas = forwardRef<
     // ===================================================
 
     // The existing scroll controller samples 0..0.58 of this curve.
-    // Keep its entire visible segment above the water (y = 0.16).
+    // The approved Home segment stays unchanged; DiveCamera takes over after it.
     const cameraPath = new THREE.CatmullRomCurve3([
       new THREE.Vector3(0, 2.65, 9),
       new THREE.Vector3(0.15, 2.1, 7.5),
@@ -262,6 +268,11 @@ const ExperienceCanvas = forwardRef<
       new THREE.Vector3(0, 0.18, -21),
       new THREE.Vector3(0, 0.18, -24),
     ], false, "catmullrom", 0.5);
+    const diveCamera = new DiveCamera(
+      cameraPath.getPointAt(EXPERIENCE_SCROLL_CONFIG.homeCameraPathAtTransitionStart),
+      lookAtPath.getPointAt(EXPERIENCE_SCROLL_CONFIG.homeCameraPathAtTransitionStart), homeCamera,
+    );
+    const divePointer = new THREE.Vector4(0.5, 0.5, 0, 0);
 
     // ===================================================
     // ===================================================
@@ -303,7 +314,7 @@ const ExperienceCanvas = forwardRef<
       quality.shadows;
 
     renderer.shadowMap.type =
-      THREE.PCFSoftShadowMap;
+      THREE.PCFShadowMap;
 
     container.appendChild(
       renderer.domElement,
@@ -321,6 +332,7 @@ const ExperienceCanvas = forwardRef<
         container.clientWidth,
         container.clientHeight,
         initialPixelRatio,
+        quality.mode,
       );
 
     home.resizeReflection(
@@ -459,7 +471,14 @@ const ExperienceCanvas = forwardRef<
       handlePointerUp,
     );
 
+    let canvasBounds = renderer.domElement.getBoundingClientRect();
     let projectPointerStart: { x: number; y: number } | null = null;
+    const cancelPointerInteraction = () => {
+      handlePointerUp();
+      projectPointerStart = null;
+    };
+    window.addEventListener("pointercancel", cancelPointerInteraction);
+    window.addEventListener("blur", cancelPointerInteraction);
     const handleProjectPointerDown = (event: PointerEvent) => {
       if (!projectCardsEnabled || event.button !== 0) return;
       projectPointerStart = {
@@ -515,7 +534,8 @@ const ExperienceCanvas = forwardRef<
     // ===================================================
 
     const clock =
-      new THREE.Clock();
+      new THREE.Timer();
+    clock.connect(document);
 
     let animationFrame = 0;
     let lastFrameTime = 0;
@@ -570,6 +590,7 @@ const ExperienceCanvas = forwardRef<
       }
       lastFrameTime = frameTime;
 
+      clock.update(frameTime);
       const deltaSeconds =
         clock.getDelta();
       const motionDelta =
@@ -618,6 +639,11 @@ const ExperienceCanvas = forwardRef<
         );
       }
       const scrollState = scroll.update(motionDelta);
+      const diveState = diveCamera.update(scrollState.transitionProgress, motionDelta,
+        visualDebug.enabled && visualDebug.paused);
+      const diveProgress = diveState.progress;
+      const diveActive = worldProgress === 0 && worldTarget === 0 &&
+        contactProgress === 0 && contactTarget === 0;
 
       if (debugHud) {
         const hudSection =
@@ -771,7 +797,7 @@ const ExperienceCanvas = forwardRef<
           ? scrollState.phase === "home"
           : pendingNavigation === "projects"
             ? scrollState.phase === "projects" &&
-              scrollState.transitionProgress >= 1
+              diveProgress >= 1
             : true;
 
       if (
@@ -780,7 +806,7 @@ const ExperienceCanvas = forwardRef<
           scrollState.phase === "home") ||
         (reachedRequestedScene &&
           sceneSection === "projects" &&
-          scrollState.transitionProgress >= 1)
+          diveProgress >= 1)
       ) {
         if (pendingNavigation === sceneSection) {
           pendingNavigationRef.current = null;
@@ -794,14 +820,15 @@ const ExperienceCanvas = forwardRef<
         }
       }
 
-      audioManager.updateTransition(
-        contactProgress > 0
-          ? contactProgress
-          : scrollState.transitionProgress,
-        contactProgress > 0
-          ? contactProgress >= 0.999
-          : scrollState.phase === "projects",
-      );
+      if (diveActive) {
+        audioManager.updateDive(diveState);
+      } else {
+        audioManager.updateDive(null);
+        audioManager.updateTransition(
+          contactProgress > 0 ? contactProgress : scrollState.transitionProgress,
+          contactProgress > 0 ? contactProgress >= 0.999 : scrollState.phase === "projects",
+        );
+      }
 
       // =================================================
       // UI SYNCHRONIZATION
@@ -819,8 +846,8 @@ const ExperienceCanvas = forwardRef<
         scrollState.phase === "home"
           ? 0
           : THREE.MathUtils.smoothstep(
-              scrollState.transitionProgress,
-              EXPERIENCE_SCROLL_CONFIG.projectsUiFadeStart,
+              diveProgress,
+              0.78,
               1,
             );
 
@@ -839,6 +866,12 @@ const ExperienceCanvas = forwardRef<
         28;
 
       if (uiRoot) {
+        const activeWet = diveActive ? diveState.wet : 0;
+        uiRoot.dataset.divePhase = diveActive ? diveState.phase : "inactive";
+        uiRoot.dataset.diveProgress = diveProgress.toFixed(4);
+        uiRoot.dataset.diveWet = activeWet.toFixed(4);
+        uiRoot.dataset.diveQuality = quality.mode;
+        uiRoot.dataset.diveReducedMotion = String(reducedMotion);
         const projectsEndProgress =
           projects.getEndSectionProgress(
             scrollState.projectsCurrentOffset,
@@ -984,12 +1017,15 @@ const ExperienceCanvas = forwardRef<
         holdProgress *
         0.45 *
         holdHomeStrength;
+      if (diveActive && diveProgress > 0) {
+        diveCamera.sample(desiredHomePosition, desiredHomeLookAt, elapsed, reducedMotion);
+      }
 
       // =================================================
       // HOME CAMERA SMOOTHING
       // =================================================
 
-      if (visualDebug.enabled && visualDebug.paused) {
+      if ((visualDebug.enabled && visualDebug.paused) || (diveActive && diveProgress > 0)) {
         homeCamera.position.copy(desiredHomePosition);
         currentHomeLookAt.copy(desiredHomeLookAt);
       } else {
@@ -1016,7 +1052,7 @@ const ExperienceCanvas = forwardRef<
         38 -
         holdProgress *
           3 *
-          holdHomeStrength;
+          holdHomeStrength - (diveActive ? diveState.contact * (reducedMotion ? 0.15 : 0.65) : 0);
 
       if (visualDebug.enabled && visualDebug.paused) {
         homeCamera.fov = targetFov;
@@ -1030,13 +1066,31 @@ const ExperienceCanvas = forwardRef<
       }
 
       homeCamera.updateProjectionMatrix();
+      diveCamera.updateAirCamera(homeCamera, currentHomeLookAt);
+      const homeCaptureCamera = diveActive && diveProgress > 0 ? diveCamera.airCamera : homeCamera;
+      if (diveActive) {
+        const travel = smoothRange(0.46, 1, diveProgress);
+        projectsCamera.position.set(0, diveProgress > 0 && diveProgress < 1 ? -0.12 * (1 - diveState.arrival) : 0,
+          PROJECT_SCENE_CONFIG.cameraZ + (diveProgress > 0 && diveProgress < 1 ? 2.4 * (1 - travel) : 0));
+        projectsCamera.lookAt(0, 0, PROJECT_SCENE_CONFIG.cameraTargetZ);
+      }
+      divePointer.set(
+        Number(uiRoot?.dataset.cursorX ?? pointer.clientX) / Math.max(container.clientWidth, 1),
+        1 - Number(uiRoot?.dataset.cursorY ?? pointer.clientY) / Math.max(container.clientHeight, 1),
+        Number(pointer.hasMoved && !visualDebug.hideCursor && uiRoot?.dataset.customCursorEnabled === "true"), 0,
+      );
+      transition.setDiveState(diveState, diveCamera.waterline(homeCamera), divePointer, reducedMotion);
+      if (uiRoot && visualDebug.enabled) {
+        uiRoot.dataset.diveCameraY = homeCamera.position.y.toFixed(4);
+        uiRoot.dataset.diveWaterline = diveCamera.waterline(homeCamera).toFixed(4);
+      }
 
       // =================================================
       // HOME UPDATE
       // =================================================
 
       const homeVisible =
-        scrollState.transitionProgress < 0.999 ||
+        diveProgress < 0.999 ||
         ((worldProgress > 0.001 || worldTarget > 0.001) &&
           worldOriginSection === "home") ||
         ((contactProgress > 0.001 || contactTarget > 0.001) &&
@@ -1047,12 +1101,12 @@ const ExperienceCanvas = forwardRef<
           pointer.x,
           pointer.y,
           holding,
-          homeCamera,
+          homeCaptureCamera,
           visualDebug.enabled && visualDebug.freezeParticles,
         );
         home.renderReflection(
           renderer,
-          homeCamera,
+          homeCaptureCamera,
         );
       }
 
@@ -1062,13 +1116,14 @@ const ExperienceCanvas = forwardRef<
 
       projects.update(
         elapsed,
-        scrollState.projectsOffset,
+        diveActive && diveProgress > 0 && diveProgress < 1
+          ? scrollState.projectsOffset * diveState.arrival : scrollState.projectsOffset,
         scrollState.scrollVelocity,
         visualDebug.enabled && visualDebug.freezeParticles,
       );
       projectCardsEnabled =
         scrollState.phase === "projects" &&
-        scrollState.transitionProgress >= 1 &&
+        diveProgress >= 1 &&
         contactProgress <= 0 &&
         worldProgress <= 0;
       projectsCamera.updateMatrixWorld();
@@ -1087,7 +1142,7 @@ const ExperienceCanvas = forwardRef<
             pointer.clientX,
             pointer.clientY,
             projectsCamera,
-            renderer.domElement.getBoundingClientRect(),
+            canvasBounds,
           );
         uiRoot.dataset.cursorTarget = overProject
           ? "project"
@@ -1146,13 +1201,14 @@ const ExperienceCanvas = forwardRef<
         transition.render(
           renderer,
           home.scene,
-          homeCamera,
+          homeCaptureCamera,
           projects.scene,
           projectsCamera,
-          scrollState.transitionProgress,
+          diveProgress,
           elapsed,
           scrollState.scrollVelocity,
           scrollState.direction,
+          true,
         );
       }
 
@@ -1211,6 +1267,7 @@ const ExperienceCanvas = forwardRef<
           height,
         );
 
+        canvasBounds = renderer.domElement.getBoundingClientRect();
         home.resizeReflection(
           width,
           height,
@@ -1283,6 +1340,8 @@ const ExperienceCanvas = forwardRef<
         handlePointerUp,
       );
 
+      window.removeEventListener("pointercancel", cancelPointerInteraction);
+      window.removeEventListener("blur", cancelPointerInteraction);
       renderer.domElement.removeEventListener(
         "pointerdown",
         handleProjectPointerDown,
@@ -1295,6 +1354,7 @@ const ExperienceCanvas = forwardRef<
         "unseen-debug-change",
         handleDebugChange,
       );
+      motionPreference.removeEventListener("change", handleMotionPreference);
 
       scroll.dispose();
       scrollManagerRef.current = null;
@@ -1310,6 +1370,7 @@ const ExperienceCanvas = forwardRef<
 
       transition.dispose();
 
+      clock.dispose();
       renderer.dispose();
 
       if (uiRoot) {
@@ -1343,6 +1404,8 @@ const ExperienceCanvas = forwardRef<
 
         delete uiRoot.dataset.scene;
         delete uiRoot.dataset.cursorTarget;
+        for (const key of ["divePhase", "diveProgress", "diveWet", "diveQuality", "diveReducedMotion",
+          "diveCameraY", "diveWaterline"]) delete uiRoot.dataset[key];
       }
 
       if (

@@ -173,7 +173,7 @@ class HomeScene {
 
   private capturesDirty = true;
 
-  private readonly dawn: THREE.Mesh;
+  private readonly dawn: THREE.Group | THREE.Mesh;
 
   private environmentTarget:
     THREE.WebGLRenderTarget | null =
@@ -785,66 +785,10 @@ class HomeScene {
       },
     );
   }
-    private updateDawnClouds(
-    elapsed: number,
-  ) {
-    for (
-      const child
-      of this.dawn.children
-    ) {
-      if (
-        child.userData.kind !==
-        "dawn-cloud"
-      ) {
-        continue;
-      }
-
-      if (child instanceof THREE.Mesh && child.material instanceof THREE.ShaderMaterial) {
-        child.material.uniforms.uTime.value = elapsed;
-      }
-
-      const baseX =
-        child.userData
-          .baseX as number;
-
-      const baseY =
-        child.userData
-          .baseY as number;
-
-      const drift =
-        child.userData
-          .drift as number;
-
-      const bob =
-        child.userData
-          .bob as number;
-
-      const speed =
-        child.userData
-          .speed as number;
-
-      const phase =
-        child.userData
-          .phase as number;
-
-      child.position.x =
-        baseX +
-        Math.sin(
-          elapsed *
-            speed +
-            phase,
-        ) *
-          drift;
-
-      child.position.y =
-        baseY +
-        Math.cos(
-          elapsed *
-            speed *
-            0.72 +
-            phase,
-        ) *
-          bob;
+  private updateDawnClouds(elapsed: number) {
+    const sky = this.dawn.children[0];
+    if (sky instanceof THREE.Mesh && sky.material instanceof THREE.ShaderMaterial) {
+      sky.material.uniforms.uTime.value = elapsed;
     }
   }
 
@@ -1055,6 +999,14 @@ class HomeScene {
     height: number,
     pixelRatio: number,
   ) {
+    // Preserve the facade's opening and lateral mass in portrait viewports.
+    const sanctuary = this.scene.getObjectByName("sanctuary");
+    const facadeScale = Math.min(1, (width / height) / (16 / 9));
+    if (sanctuary) sanctuary.scale.x = facadeScale;
+    const sky = this.dawn.children[0];
+    if (sky instanceof THREE.Mesh && sky.material instanceof THREE.ShaderMaterial) {
+      sky.material.uniforms.uSunPosition.value.x = 7.5 * facadeScale;
+    }
     const reflectionPixelRatio =
       Math.min(
         pixelRatio,

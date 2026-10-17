@@ -1,4 +1,6 @@
 import { AUDIO_VALUES } from "../config/visual";
+import { DiveAudio } from "../dive/DiveAudio";
+import type { DiveState } from "../dive/diveTimeline";
 
 const AUDIO_CONFIG = AUDIO_VALUES;
 
@@ -48,6 +50,7 @@ class AudioManager {
   private lastMusicGainTarget = 0;
 
   private immersion = 0;
+  private diveAudio: DiveAudio | null = null;
 
   private disposed = false;
 
@@ -94,6 +97,7 @@ class AudioManager {
       this.ownedNodes.add(this.musicGain);
       this.ownedNodes.add(this.effectsGain);
       this.ownedNodes.add(this.lowPass);
+      this.diveAudio = new DiveAudio(this.context, this.masterGain);
 
       this.isInitialized = true;
       this.lastCutoffTarget = AUDIO_CONFIG.normalCutoff;
@@ -116,6 +120,12 @@ class AudioManager {
 
   update(progress: number, isProjectsPhase = false): void {
     this.updateTransition(progress, isProjectsPhase);
+  }
+
+  updateDive(state: DiveState | null): void {
+    // Never initialize/resume audio here: only the existing gesture can do so.
+    if (state) this.updateTransition(state.immersion, false);
+    this.diveAudio?.update(state, state !== null && !this.isMuted);
   }
 
   // Starts the track (or procedural fallback) once; it keeps running while muted.
@@ -420,6 +430,8 @@ class AudioManager {
   }
 
   dispose(): void {
+    this.diveAudio?.dispose();
+    this.diveAudio = null;
     this.disposed = true;
     this.isInitialized = false;
     this.musicSource?.stop();
