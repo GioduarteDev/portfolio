@@ -313,7 +313,8 @@ class SceneTransition {
     renderer.setRenderTarget(null);
     renderer.render(this.postProcessScene, this.transitionCamera);
     if (dive && this.diveState && progress > 0 && progress < 1) {
-      this.diveParticles.update(this.diveState, elapsed, this.reducedMotion);
+      this.diveParticles.update(this.diveState, elapsed, this.reducedMotion,
+        this.transitionMaterial.uniforms.uWaterline.value);
       const autoClear = renderer.autoClear;
       try {
         renderer.autoClear = false;

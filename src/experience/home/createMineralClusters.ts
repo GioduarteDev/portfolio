@@ -1,151 +1,142 @@
 import * as THREE from "three";
 import type { QualitySettings } from "../core/quality";
+import { ecologyRandom, MINERAL_OUTCROPS, outcropSurface, SANCTUARY_ECOLOGY } from "./sanctuaryEcology";
+import { SANCTUARY_ARCHITECTURE } from "./sanctuaryComposition";
 
-type Family = "moonstone" | "sapphire" | "amethyst" | "opal";
-
-interface ClusterSpec {
-  name: string;
-  family: Family;
-  position: [number, number, number];
-  scale: number;
-  crystals: number;
-  seed: number;
-  // Lower tiers drop secondary clusters; 0 is always kept.
-  tier: 0 | 1;
-}
-
-// Sparse, asymmetric and kept outside the stair footprint (x > 4.3).
-const CLUSTERS: readonly ClusterSpec[] = [
-  { name: "left moonstone cluster", family: "moonstone", position: [-5.5, 0.18, -3.4], scale: 1, crystals: 5, seed: 3, tier: 0 },
-  { name: "right sapphire cluster", family: "sapphire", position: [5.9, 0.18, -3.9], scale: 0.85, crystals: 4, seed: 11, tier: 0 },
-  { name: "left opal accent", family: "opal", position: [-4.7, 0.18, -2.5], scale: 0.4, crystals: 3, seed: 23, tier: 1 },
-  { name: "right amethyst accent", family: "amethyst", position: [4.9, 0.18, -2.7], scale: 0.38, crystals: 3, seed: 37, tier: 1 },
-  { name: "distant moonstone cluster", family: "moonstone", position: [-8.2, 0.18, -9.5], scale: 1.1, crystals: 3, seed: 51, tier: 1 },
-];
-
-function seeded(seed: number) {
-  let s = seed * 9301 + 49297;
-  return () => {
-    s = (s * 9301 + 49297) % 233280;
-    return s / 233280;
-  };
-}
-
-function createCrystalGeometry(rand: () => number, height: number, radius: number) {
-  const geometry = new THREE.CylinderGeometry(radius * (0.25 + rand() * 0.2), radius, height, 6, 3, false);
-  const pos = geometry.getAttribute("position");
-  for (let i = 0; i < pos.count; i++) {
-    const t = pos.getY(i) / height + 0.5;
-    const wobble = 1 + (rand() - 0.5) * 0.3;
-    pos.setX(i, pos.getX(i) * wobble * (1 + t * 0.2));
-    pos.setZ(i, pos.getZ(i) * wobble * (1 - t * 0.15));
-    // Broken, slanted termination instead of a perfect point.
-    if (t > 0.99) pos.setY(i, pos.getY(i) - pos.getX(i) * 0.6 - rand() * height * 0.06);
-    pos.setY(i, pos.getY(i) + height / 2);
+const PALETTES = [
+  { name: "moonstone", color: "#E5EDF7", glow: "#D2E6EF", roughness: 0.26, transmission: 0.16, iridescence: 0.16 },
+  { name: "opal", color: "#E9E2F5", glow: "#D6CFE9", roughness: 0.20, transmission: 0.25, iridescence: 0.34 },
+  { name: "deep sapphire", color: "#829FBD", glow: "#9EBFD8", roughness: 0.18, transmission: 0.30, iridescence: 0.08 },
+  { name: "glacial cyan", color: "#D0EDF2", glow: "#BFDFE8", roughness: 0.22, transmission: 0.32, iridescence: 0.18 },
+] as const;
+/** A clean six-sided prism with a true faceted termination, rooted at y=0. */
+function createCrystalGeometry() {
+  const positions: number[] = [];
+  const indices: number[] = [];
+  for (const [height, radius] of [[0, 0.85], [0.78, 1], [0.86, 0.88]]) {
+    for (let side = 0; side < 6; side++) {
+      const angle = side * Math.PI / 3;
+      positions.push(Math.cos(angle) * radius, height, Math.sin(angle) * radius);
+    }
   }
+  positions.push(0.12, 1, -0.08);
+  for (let ring = 0; ring < 2; ring++) {
+    for (let side = 0; side < 6; side++) {
+      const a = ring * 6 + side, b = ring * 6 + (side + 1) % 6;
+      indices.push(a, a + 6, b, b, a + 6, b + 6);
+    }
+  }
+  for (let side = 0; side < 6; side++) {
+    indices.push(12 + side, 18, 12 + (side + 1) % 6);
+    if (side > 0 && side < 5) indices.push(0, side, side + 1);
+  }
+  const indexed = new THREE.BufferGeometry();
+  indexed.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  indexed.setIndex(indices);
+  const geometry = indexed.toNonIndexed();
+  indexed.dispose();
   geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
   return geometry;
 }
 
-function createBaseGeometry(rand: () => number, width: number) {
-  const geometry = new THREE.IcosahedronGeometry(width, 2);
-  const pos = geometry.getAttribute("position");
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-    const n = 0.82 + 0.3 * Math.sin(x * 3.1 + z * 2.3) * Math.cos(y * 2.7 + rand() * 0.15);
-    pos.setXYZ(i, x * n * 1.25, Math.max(y * n * 0.55, -0.02), z * n);
-  }
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
-function createFamilyMaterial(family: Family) {
-  switch (family) {
-    case "sapphire":
-      return new THREE.MeshPhysicalMaterial({
-        name: "sapphire", color: "#9296AA", roughness: 0.58, clearcoat: 0.04,
-        clearcoatRoughness: 0.2, ior: 1.7, sheen: 0.3, sheenColor: new THREE.Color("#A9C4EE"),
-        sheenRoughness: 0.4, envMapIntensity: 0.7, emissive: "#555465", emissiveIntensity: 0.03,
-      });
-    case "amethyst":
-      return new THREE.MeshPhysicalMaterial({
-        name: "amethyst", color: "#B9A7DC", roughness: 0.34, clearcoat: 0.3,
-        clearcoatRoughness: 0.25, ior: 1.55, sheen: 0.25, sheenColor: new THREE.Color("#E4DAF5"),
-        sheenRoughness: 0.5, envMapIntensity: 0.6,
-      });
-    case "opal":
-      return new THREE.MeshPhysicalMaterial({
-        name: "opal", color: "#F4EFF0", roughness: 0.4, clearcoat: 0.2, ior: 1.45,
-        iridescence: 0.22, iridescenceIOR: 1.3, iridescenceThicknessRange: [300, 600],
-        envMapIntensity: 0.5,
-      });
-    default:
-      return new THREE.MeshPhysicalMaterial({
-        name: "moonstone", color: "#EEF0FA", roughness: 0.38, clearcoat: 0.3,
-        clearcoatRoughness: 0.3, ior: 1.52, iridescence: 0.3, iridescenceIOR: 1.3,
-        iridescenceThicknessRange: [200, 420], sheen: 0.4, sheenColor: new THREE.Color("#C8D0F2"),
-        sheenRoughness: 0.45, envMapIntensity: 0.6,
-      });
-  }
-}
-
-/** A handful of mineral outcrops. Crystals are milky and opaque-ish (no
- * transmission pass) and emerge from a rough ivory/lavender base. */
+/** Complete mineral colonies, with shared facets and four shell batches.
+ * Every root and fallen shard samples its host stone; only highlights receive cores. */
 export function createMineralClusters(
   quality: QualitySettings,
   geometries: THREE.BufferGeometry[],
   materials: THREE.Material[],
 ): THREE.Group {
   const group = new THREE.Group();
-  group.name = "mineral clusters";
-  const baseMaterial = new THREE.MeshPhysicalMaterial({
-    name: "mineral base", color: "#DAD4DF", roughness: 0.66, clearcoat: 0,
-    sheen: 0.1, sheenColor: new THREE.Color("#E9E2F0"), envMapIntensity: 0.4,
+  group.name = "living sanctuary crystals";
+  const geometry = createCrystalGeometry();
+  geometries.push(geometry);
+  const density = SANCTUARY_ECOLOGY.density[quality.mode];
+  const controls = SANCTUARY_ECOLOGY.crystals;
+  const shells: THREE.Matrix4[][] = PALETTES.map(() => []);
+  const hearts: THREE.Matrix4[][] = PALETTES.map(() => []);
+  const dummy = new THREE.Object3D();
+  const coreTransform = new THREE.Matrix4().compose(new THREE.Vector3(0, 0.06, 0),
+    new THREE.Quaternion(), new THREE.Vector3(0.3, 0.78, 0.3));
+
+  MINERAL_OUTCROPS.forEach((outcrop, index) => {
+    const random = ecologyRandom(1829 + index * 173);
+    const medium = Math.max(2, Math.round(controls.medium * density));
+    const small = Math.max(4, Math.round(controls.small * density));
+    const fragments = Math.max(3, Math.round(controls.fragments * density));
+    const scale = index < 2 ? 1 : index < 4 ? 0.68 : index < 6 ? 0.66 : 0.30;
+    const innerFlank = index === 4 || index === 5 ? -Math.sign(outcrop.position[0]) * outcrop.scale[0] * 0.62 : 0;
+    const anchor = new THREE.Object3D();
+    anchor.name = `${outcrop.name} crystal garden`;
+    anchor.position.copy(outcropSurface(outcrop, innerFlank, 0));
+    group.add(anchor);
+    for (let i = 0; i < 1 + medium + small + fragments; i++) {
+      const hero = i === 0;
+      const secondary = i > 0 && i <= medium;
+      const fallen = i > medium + small;
+      const angle = random() * Math.PI * 2;
+      const spread = hero ? 0.04 : secondary ? 0.25 + random() * 0.20 : 0.42 + random() * 0.32;
+      const x = innerFlank + Math.cos(angle) * spread * scale;
+      const z = Math.sin(angle) * spread * scale;
+      dummy.position.copy(outcropSurface(outcrop, x, z));
+      const height = (hero ? controls.dominantHeight : secondary ? 0.65 + random() * 0.5
+        : fallen ? 0.13 + random() * 0.28 : 0.18 + random() * 0.28) * scale;
+      const radius = (hero ? 0.22 : secondary ? 0.11 + random() * 0.04 : 0.04 + random() * 0.04) * scale;
+      const lean = hero ? 0.07 : fallen ? 1.05 + random() * 0.35 : 0.12 + random() * 0.35;
+      dummy.rotation.set(Math.cos(angle) * lean, random() * Math.PI, Math.sin(angle) * lean);
+      dummy.scale.set(radius, height, radius);
+      dummy.updateMatrix();
+      const choice = random();
+      const family = hero ? (index === 1 || index === 5 ? 1 : 0)
+        : choice < 0.68 ? 0 : choice < 0.87 ? 1 : choice < 0.94 ? 3 : 2;
+      shells[family].push(dummy.matrix.clone());
+      if ((hero || secondary) && quality.mode !== "low") {
+        hearts[family].push(dummy.matrix.clone().multiply(coreTransform));
+      }
+    }
   });
-  materials.push(baseMaterial);
-  const familyMaterials = new Map<Family, THREE.MeshPhysicalMaterial>();
-
-  const maxTier = quality.mode === "low" ? 0 : 1;
-  for (const spec of CLUSTERS) {
-    if (spec.tier > maxTier) continue;
-    if (!familyMaterials.has(spec.family)) {
-      const material = createFamilyMaterial(spec.family);
-      familyMaterials.set(spec.family, material);
-      materials.push(material);
+  const stairs = SANCTUARY_ARCHITECTURE.steps;
+  for (const side of [-1, 1]) {
+    for (const step of [2, 8, 11]) {
+      dummy.position.set(side * (stairs.halfWidth - step * stairs.taper - 0.08),
+        stairs.baseHeight + step * stairs.rise + 0.012, stairs.front - step * stairs.run - 0.12);
+      dummy.rotation.set(0.2, step, side * 0.22);
+      dummy.scale.set(0.035, 0.12 + step * 0.004, 0.035);
+      dummy.updateMatrix();
+      shells[0].push(dummy.matrix.clone());
     }
-    const material = familyMaterials.get(spec.family)!;
-    const rand = seeded(spec.seed);
-    const cluster = new THREE.Group();
-    cluster.name = spec.name;
-    cluster.position.set(...spec.position);
-    cluster.rotation.y = rand() * Math.PI * 2;
-
-    const baseGeometry = createBaseGeometry(rand, 0.55 * spec.scale);
-    geometries.push(baseGeometry);
-    const base = new THREE.Mesh(baseGeometry, baseMaterial);
-    base.name = `${spec.name} base`;
-    base.castShadow = quality.shadows;
-    base.receiveShadow = true;
-    cluster.add(base);
-
-    const count = quality.mode === "high" ? spec.crystals : Math.max(2, spec.crystals - 1);
-    for (let i = 0; i < count; i++) {
-      const height = (0.35 + rand() * 0.42) * spec.scale * (i === 0 ? 1.25 : 1);
-      const radius = (0.16 + rand() * 0.14) * spec.scale;
-      const geometry = createCrystalGeometry(rand, height, radius);
-      geometries.push(geometry);
-      const crystal = new THREE.Mesh(geometry, material);
-      crystal.name = `${spec.name} crystal ${i}`;
-      const angle = rand() * Math.PI * 2;
-      const spread = i === 0 ? 0.04 : (0.12 + rand() * 0.3) * spec.scale;
-      crystal.position.set(Math.cos(angle) * spread, 0.04 * spec.scale, Math.sin(angle) * spread);
-      const lean = (i === 0 ? 0.08 : 0.2 + rand() * 0.35);
-      crystal.rotation.set(Math.sin(angle) * lean, rand() * Math.PI, -Math.cos(angle) * lean);
-      crystal.castShadow = quality.shadows;
-      crystal.receiveShadow = true;
-      cluster.add(crystal);
-    }
-    group.add(cluster);
   }
+
+  PALETTES.forEach((palette, index) => {
+    const shellMaterial = new THREE.MeshPhysicalMaterial({
+      name: `${palette.name} crystal shell`, color: palette.color,
+      roughness: palette.roughness, clearcoat: 0.5, clearcoatRoughness: 0.18,
+      transmission: quality.mode === "low" ? 0 : palette.transmission,
+      thickness: 0.4, ior: 1.46, attenuationDistance: 2.5,
+      attenuationColor: new THREE.Color(palette.color),
+      iridescence: palette.iridescence, iridescenceIOR: 1.3, iridescenceThicknessRange: [180, 380],
+      envMapIntensity: 0.65, emissive: palette.glow, emissiveIntensity: 0.20,
+    });
+    materials.push(shellMaterial);
+    const batch = (matrices: THREE.Matrix4[], material: THREE.Material, name: string) => {
+      const mesh = new THREE.InstancedMesh(geometry, material, matrices.length);
+      mesh.name = name;
+      matrices.forEach((matrix, i) => mesh.setMatrixAt(i, matrix));
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.receiveShadow = true;
+      mesh.castShadow = quality.shadows && material === shellMaterial;
+      mesh.computeBoundingSphere();
+      group.add(mesh);
+    };
+    batch(shells[index], shellMaterial, `${palette.name} rooted colonies and mineral fragments`);
+    if (hearts[index].length) {
+      const heartMaterial = new THREE.MeshStandardMaterial({
+        name: `${palette.name} luminous heart`, color: palette.glow,
+        emissive: palette.glow, emissiveIntensity: 0.5, roughness: 0.4,
+      });
+      materials.push(heartMaterial);
+      batch(hearts[index], heartMaterial, `${palette.name} quiet inner radiance`);
+    }
+  });
   return group;
 }

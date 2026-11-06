@@ -50,6 +50,9 @@ void main() {
   airUv = 0.5 + (airUv - 0.5) * (1.0 - contact * 0.012 * uMotionScale);
   vec2 waterUv = vUv + refract;
   waterUv += centered * immersed * 0.008 * uMotionScale;
+  // A thin meniscus compresses/refocuses the image as the eye passes through.
+  float membrane = exp(-abs(signedDistance) * 42.0) * contact;
+  waterUv += centered * membrane * 0.016 * uMotionScale;
 
   // Tiny lens films, procedural and temporary; no image overlay.
   if (uQuality > 0.5) {
@@ -70,6 +73,14 @@ void main() {
   airUv += cursorWarp * contact;
 
   vec3 airColor = texture2D(uHomeTexture, safeUv(airUv)).rgb;
+  if (uQuality > 0.5) {
+    vec2 drag = flow * contact * band * uMotionScale * 0.0018;
+    airColor = airColor * 0.7 + texture2D(uHomeTexture, safeUv(airUv + drag)).rgb * 0.15
+      + texture2D(uHomeTexture, safeUv(airUv - drag)).rgb * 0.15;
+    float fringe = membrane * uMotionScale * 0.0007;
+    airColor.r = mix(airColor.r, texture2D(uHomeTexture, safeUv(airUv + vec2(fringe, 0.0))).r, 0.25);
+    airColor.b = mix(airColor.b, texture2D(uHomeTexture, safeUv(airUv - vec2(fringe, 0.0))).b, 0.25);
+  }
   vec3 projects = texture2D(uProjectsTexture, safeUv(waterUv)).rgb;
   float depth = texture2D(uProjectsDepth, safeUv(waterUv)).x;
   float distanceToScene = -perspectiveDepthToViewZ(depth, uProjectsClip.x, uProjectsClip.y);
@@ -85,7 +96,7 @@ void main() {
   }
 
   // The destination resolves through a lit water volume, never through black.
-  vec3 mineralWater = vec3(0.62, 0.76, 0.79);
+  vec3 mineralWater = mix(vec3(0.10, 0.25, 0.33), vec3(0.34, 0.55, 0.61), vUv.y);
   // Only the air region contains Home. Underwater is a separate lit space;
   // distance scattering resolves the destination without ghosting two scenes.
   float settling = smoothstep(0.46, 0.78, uProgress);
@@ -94,16 +105,31 @@ void main() {
   vec3 underwater = projects * absorption;
   underwater = mix(underwater, mineralWater, opticalDepth);
   underwater = mix(underwater, (underwater - 0.5) * 0.92 + 0.5, immersed);
+  float revelation = smoothstep(0.44, 0.96, uProgress);
+  underwater = mix(mineralWater, underwater, 0.08 + revelation * 0.92);
   float caustic = pow(max(0.0, sin(vUv.x * 17.0 + wave(vUv * 0.6)) *
     sin(vUv.y * 11.0 - uTime * 0.12)), 8.0);
   underwater += vec3(0.008, 0.013, 0.014) * caustic * immersed * uMotionScale;
   float shaft = pow(max(0.0, sin(vUv.x * 7.0 + vUv.y * 0.9 + uTime * 0.05)), 12.0);
-  underwater += vec3(0.014, 0.020, 0.022) * shaft * immersed * vUv.y;
+  underwater += vec3(0.025, 0.042, 0.046) * shaft * immersed * vUv.y;
+  // The underside of the departed surface remains visible above the descent.
+  float canopy = smoothstep(0.60, 0.98, vUv.y) * (1.0 - smoothstep(0.64, 0.88, uProgress))
+    * smoothstep(0.40, 0.50, uProgress);
+  underwater += vec3(0.075, 0.11, 0.12) * canopy * (0.65 + slowField * 0.22);
+  // A submerged glimpse of the shell spiral, displaced with the same water field.
+  vec2 thread = (waterUv - vec2(0.22, 0.42)) * vec2(aspect, 1.0);
+  float threadRadius = max(length(thread), 0.015);
+  float threadPhase = log(threadRadius / 0.12) / 0.23 - atan(thread.y, thread.x);
+  float threadDistance = abs(sin(threadPhase * 0.5)) * threadRadius;
+  float threadLight = (1.0 - smoothstep(0.0007, 0.0022, threadDistance))
+    * smoothstep(0.025, 0.08, threadRadius) * (1.0 - smoothstep(0.24, 0.42, threadRadius));
+  underwater += vec3(0.12, 0.115, 0.09) * threadLight * immersed * (1.0 - arrival);
 
   vec3 color = mix(airColor, underwater, waterMask);
   float edge = exp(-abs(signedDistance) * 180.0) * presence;
   color = mix(color, vec3(0.86, 0.92, 0.91), edge * 0.36);
   color += vec3(0.025, 0.031, 0.029) * band;
+  color *= 1.0 + membrane * 0.025;
   gl_FragColor = vec4(color, 1.0);
 }
 `;

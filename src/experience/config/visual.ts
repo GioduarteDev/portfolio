@@ -47,7 +47,7 @@ export const TRANSITION_END =
 
 // PROJECTS
 export const PROJECT_SCENE_VALUES = {
-  background: "#f0eeea",
+  background: "#89A9B5",
   fogNear: 34,
   fogFar: 62,
   cameraFov: 40,

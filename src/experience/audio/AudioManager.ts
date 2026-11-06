@@ -24,6 +24,8 @@ class AudioManager {
   private effectsGain: GainNode | null = null;
 
   private lowPass: BiquadFilterNode | null = null;
+  private diveReverb: GainNode | null = null;
+  private lastReverbTarget = 0;
 
   private musicSource: AudioBufferSourceNode | null = null;
 
@@ -90,6 +92,15 @@ class AudioManager {
 
       this.musicGain.connect(this.lowPass);
       this.lowPass.connect(this.masterGain);
+      const chamber = this.context.createConvolver();
+      chamber.buffer = this.createImpulseResponse(this.context, 0.85);
+      this.diveReverb = this.context.createGain();
+      this.diveReverb.gain.value = 0;
+      this.lowPass.connect(chamber);
+      chamber.connect(this.diveReverb);
+      this.diveReverb.connect(this.masterGain);
+      this.ownedNodes.add(chamber);
+      this.ownedNodes.add(this.diveReverb);
       this.effectsGain.connect(this.masterGain);
       this.masterGain.connect(this.context.destination);
 
@@ -124,7 +135,13 @@ class AudioManager {
 
   updateDive(state: DiveState | null): void {
     // Never initialize/resume audio here: only the existing gesture can do so.
-    if (state) this.updateTransition(state.immersion, false);
+    const immersion = state ? Math.max(state.immersion, state.contact * 0.45) : 0;
+    if (state) this.updateTransition(immersion, false);
+    const reverberation = immersion * 0.10;
+    if (this.context && this.diveReverb && Math.abs(reverberation - this.lastReverbTarget) > 0.002) {
+      this.diveReverb.gain.setTargetAtTime(reverberation, this.context.currentTime, 0.18);
+      this.lastReverbTarget = reverberation;
+    }
     this.diveAudio?.update(state, state !== null && !this.isMuted);
   }
 
@@ -342,10 +359,8 @@ class AudioManager {
       ? 0
       : Math.min(1, Math.max(0, transitionProgress));
     this.immersion = immersion;
-    const cutoffTarget =
-      AUDIO_CONFIG.normalCutoff +
-      (AUDIO_CONFIG.submergedCutoff - AUDIO_CONFIG.normalCutoff) *
-        immersion;
+    const cutoffTarget = AUDIO_CONFIG.normalCutoff *
+      Math.pow(AUDIO_CONFIG.submergedCutoff / AUDIO_CONFIG.normalCutoff, immersion);
     const now = this.context.currentTime;
 
     if (
@@ -460,6 +475,8 @@ class AudioManager {
     this.musicGain = null;
     this.effectsGain = null;
     this.lowPass = null;
+    this.diveReverb = null;
+    this.lastReverbTarget = 0;
 
     if (context && context.state !== "closed") {
       void context.close().catch((error: unknown) => {

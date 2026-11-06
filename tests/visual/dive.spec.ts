@@ -86,7 +86,7 @@ test("reduced motion changes live and pooled dive resources resize/dispose", asy
     transition.dispose();
     return { counts, resized, allDisposed: disposed.size === resources.length };
   });
-  expect(result.counts).toEqual([12, 34, 62]);
+  expect(result.counts).toEqual([67, 152, 290]);
   expect(result.resized).toBe(true);
   expect(result.allDisposed).toBe(true);
 });

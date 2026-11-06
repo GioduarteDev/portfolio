@@ -20,6 +20,8 @@ export function createFacadeProjector() {
 export function createSculptedPanel(
   inner: THREE.Curve<THREE.Vector3>, outer: THREE.Curve<THREE.Vector3>,
   thickness: number, segments: number,
+  curvature = 0.65,
+  taperEnds = false,
 ): THREE.BufferGeometry {
   const across = 12;
   const positions: number[] = [];
@@ -28,13 +30,14 @@ export function createSculptedPanel(
   for (let layer = 0; layer < 2; layer++) {
     for (let row = 0; row <= segments; row++) {
       const t = row / segments;
+      const localThickness = thickness * (taperEnds ? Math.pow(Math.sin(t * Math.PI), 0.35) : 1);
       const a = inner.getPoint(t), b = outer.getPoint(t);
       for (let col = 0; col <= across; col++) {
         const v = col / across;
         const p = a.clone().lerp(b, v);
-        const shoulder = Math.pow(Math.sin(v * Math.PI), 0.65);
-        p.z += layer === 0 ? shoulder * thickness * 0.32
-          : -thickness * (0.45 + shoulder * 0.55);
+        const shoulder = Math.pow(Math.sin(v * Math.PI), curvature);
+        p.z += layer === 0 ? shoulder * localThickness * 0.32
+          : -localThickness * (0.45 + shoulder * 0.55);
         positions.push(...p.toArray());
       }
     }

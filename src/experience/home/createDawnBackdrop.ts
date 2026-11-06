@@ -15,8 +15,8 @@ export function createDawnBackdrop(mode: QualityMode = "high") {
     uniforms: {
       uTime: { value: 0 },
       uCloudOpacity: { value: mode === "low" ? 0.75 : mode === "medium" ? 0.84 : 0.90 },
-      // Sun position matching target reference: slightly right of center, natural dawn elevation
-      uSunPosition: { value: new THREE.Vector3(7.5, 4.3, -78.0) },
+      // Low sunrise on the ceremonial axis, just above the marine haze.
+      uSunPosition: { value: new THREE.Vector3(0, -0.2, -78.0) },
     },
     vertexShader: `
       varying vec3 vSkyPosition;
@@ -115,9 +115,9 @@ export function createDawnBackdrop(mode: QualityMode = "high") {
         // ----------------------------------------------------
         // A. CÉU (h >= 0.0)
         // ----------------------------------------------------
-        vec3 cZenith = vec3(0.28, 0.29, 0.46);
-        vec3 cMidUpper = vec3(0.48, 0.42, 0.55);
-        vec3 cMid = vec3(0.66, 0.52, 0.59);
+        vec3 cZenith = vec3(0.43, 0.51, 0.67);
+        vec3 cMidUpper = vec3(0.64, 0.58, 0.73);
+        vec3 cMid = vec3(0.79, 0.65, 0.73);
         vec3 cMidWarm = vec3(0.88, 0.62, 0.52);
         vec3 cHorizon = vec3(0.97, 0.72, 0.54);
 
@@ -171,6 +171,13 @@ export function createDawnBackdrop(mode: QualityMode = "high") {
 
         skyColor = mix(skyColor, cloudColor, totalClouds * uCloudOpacity);
 
+        // High, translucent wind ribbons give the dawn a second atmospheric depth.
+        float highVeil = noise(vec2(cloudP.x * 3.2 + uTime * 0.0007,
+          cloudP.y * 34.0 + noise(cloudP * 3.0) * 1.8));
+        highVeil = smoothstep(0.63, 0.91, highVeil)
+          * smoothstep(0.10, 0.25, h) * (1.0 - smoothstep(0.38, 0.65, h));
+        skyColor = mix(skyColor, vec3(0.94, 0.84, 0.89), highVeil * 0.12 * frontVis);
+
         // ----------------------------------------------------
         // B. OCEANO DISTANTE (h < 0.0)
         // ----------------------------------------------------
@@ -221,6 +228,13 @@ export function createDawnBackdrop(mode: QualityMode = "high") {
           finalColor = mix(seaColor, horizonGlowColor, oceanHorizonBlend * 0.32 + horizonAtmosphere * 0.12);
         }
 
+        // Distant islands dissolve into the marine haze, leaving the sun clear.
+        float islandX = abs(ray.x / max(-ray.z, 0.15));
+        float islandEnvelope = exp(-pow((islandX - 0.25) / 0.11, 2.0));
+        float islandHeight = islandEnvelope * (0.009 + noise(vec2(islandX * 65.0, 8.0)) * 0.012);
+        float island = smoothstep(-0.002, 0.001, h)
+          * (1.0 - smoothstep(islandHeight - 0.0015, islandHeight + 0.002, h));
+        finalColor = mix(finalColor, vec3(0.60, 0.61, 0.69), island * 0.28);
         gl_FragColor = vec4(finalColor, 1.0);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>

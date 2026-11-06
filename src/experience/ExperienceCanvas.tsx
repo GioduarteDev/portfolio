@@ -868,6 +868,7 @@ const ExperienceCanvas = forwardRef<
       if (uiRoot) {
         const activeWet = diveActive ? diveState.wet : 0;
         uiRoot.dataset.divePhase = diveActive ? diveState.phase : "inactive";
+        uiRoot.dataset.diveChapter = diveActive ? diveState.chapter : "inactive";
         uiRoot.dataset.diveProgress = diveProgress.toFixed(4);
         uiRoot.dataset.diveWet = activeWet.toFixed(4);
         uiRoot.dataset.diveQuality = quality.mode;
@@ -977,7 +978,8 @@ const ExperienceCanvas = forwardRef<
           1,
           EXPERIENCE_SCROLL_CONFIG.homeParallaxEndStrength,
           transitionParallaxReduction,
-        );
+        ) * (reducedMotion ? 0 : 0.6 + smoothRange(0, 0.36, scrollState.homeCameraPathProgress) * 0.22
+          + diveState.anticipation * 0.10) * (1 - smoothRange(0.12, 0.3, diveProgress));
 
       desiredHomePosition.x +=
         pointer.x *
@@ -988,6 +990,13 @@ const ExperienceCanvas = forwardRef<
         pointer.y *
         HOME_PARALLAX_Y *
         parallaxStrength;
+
+      // Slow breath stays in the same camera rig and yields to the dive timeline.
+      const homeBreath = reducedMotion || (visualDebug.enabled &&
+        (visualDebug.freezeTime || visualDebug.freezeParticles || visualDebug.paused))
+        ? 0 : 1 - smoothRange(0, 0.24, diveProgress);
+      desiredHomePosition.y += Math.sin(elapsed * 0.22) * 0.018 * homeBreath;
+      desiredHomePosition.x += Math.sin(elapsed * 0.13) * 0.012 * homeBreath;
 
       // =================================================
       // CLICK & HOLD
@@ -1018,7 +1027,7 @@ const ExperienceCanvas = forwardRef<
         0.45 *
         holdHomeStrength;
       if (diveActive && diveProgress > 0) {
-        diveCamera.sample(desiredHomePosition, desiredHomeLookAt, elapsed, reducedMotion);
+        diveCamera.sample(desiredHomePosition, desiredHomeLookAt, elapsed, reducedMotion, true);
       }
 
       // =================================================
@@ -1031,15 +1040,17 @@ const ExperienceCanvas = forwardRef<
       } else {
         homeCamera.position.lerp(
           desiredHomePosition,
-          0.075,
+          1 - Math.exp(-deltaSeconds * 4.7),
         );
 
         currentHomeLookAt.lerp(
           desiredHomeLookAt,
-          0.07,
+          1 - Math.exp(-deltaSeconds * 4.35),
         );
       }
 
+      const diveRoll = reducedMotion ? 0 : Math.sin(elapsed * 0.31) * diveState.immersion * 0.0025;
+      homeCamera.up.set(Math.sin(diveRoll), Math.cos(diveRoll), 0);
       homeCamera.lookAt(
         currentHomeLookAt,
       );
@@ -1070,8 +1081,8 @@ const ExperienceCanvas = forwardRef<
       const homeCaptureCamera = diveActive && diveProgress > 0 ? diveCamera.airCamera : homeCamera;
       if (diveActive) {
         const travel = smoothRange(0.46, 1, diveProgress);
-        projectsCamera.position.set(0, diveProgress > 0 && diveProgress < 1 ? -0.12 * (1 - diveState.arrival) : 0,
-          PROJECT_SCENE_CONFIG.cameraZ + (diveProgress > 0 && diveProgress < 1 ? 2.4 * (1 - travel) : 0));
+        projectsCamera.position.set(0, diveProgress > 0 && diveProgress < 1 ? 0.65 * (1 - diveState.arrival) : 0,
+          PROJECT_SCENE_CONFIG.cameraZ + (diveProgress > 0 && diveProgress < 1 ? 4.5 * (1 - travel) : 0));
         projectsCamera.lookAt(0, 0, PROJECT_SCENE_CONFIG.cameraTargetZ);
       }
       divePointer.set(
@@ -1103,6 +1114,11 @@ const ExperienceCanvas = forwardRef<
           holding,
           homeCaptureCamera,
           visualDebug.enabled && visualDebug.freezeParticles,
+          reducedMotion,
+          pointer.hasMoved,
+          diveState.immersion,
+          Math.max(diveState.anticipation, smoothRange(0, 0.36, scrollState.homeCameraPathProgress)
+            * (1 - diveState.crossing)),
         );
         home.renderReflection(
           renderer,
@@ -1120,6 +1136,7 @@ const ExperienceCanvas = forwardRef<
           ? scrollState.projectsOffset * diveState.arrival : scrollState.projectsOffset,
         scrollState.scrollVelocity,
         visualDebug.enabled && visualDebug.freezeParticles,
+        reducedMotion,
       );
       projectCardsEnabled =
         scrollState.phase === "projects" &&
@@ -1404,7 +1421,7 @@ const ExperienceCanvas = forwardRef<
 
         delete uiRoot.dataset.scene;
         delete uiRoot.dataset.cursorTarget;
-        for (const key of ["divePhase", "diveProgress", "diveWet", "diveQuality", "diveReducedMotion",
+        for (const key of ["divePhase", "diveChapter", "diveProgress", "diveWet", "diveQuality", "diveReducedMotion",
           "diveCameraY", "diveWaterline"]) delete uiRoot.dataset[key];
       }
 

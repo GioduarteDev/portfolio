@@ -5,6 +5,7 @@ export function addSubtleCaustics(
   material: THREE.MeshPhysicalMaterial,
   time: { value: number },
   strength: number,
+  surfaceHeight = 0,
 ) {
   if (strength === 0) return;
   material.onBeforeCompile = (shader) => {
@@ -21,8 +22,8 @@ export function addSubtleCaustics(
         float ca = sin(cp.x + sin(cp.y * 1.3 + uCausticTime * 0.15));
         float cb = cos(cp.y * 1.4 - sin(cp.x * 0.9 - uCausticTime * 0.12));
         float caustic = pow(max(1.0 - abs(ca + cb) * 0.65, 0.0), 9.0);
-        float nearWater = 1.0 - smoothstep(0.25, 1.25, vCausticPosition.y);
+        float nearWater = 1.0 - smoothstep(0.25, 1.25, vCausticPosition.y - ${surfaceHeight.toFixed(3)});
         diffuseColor.rgb += vec3(0.48, 0.74, 0.8) * caustic * nearWater * uCausticStrength;`);
   };
-  material.customProgramCacheKey = () => `sanctuary-caustics-${strength}`;
+  material.customProgramCacheKey = () => `sanctuary-caustics-${strength}-${surfaceHeight}`;
 }

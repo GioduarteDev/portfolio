@@ -55,10 +55,17 @@ void main() {
   vec3 reflected = texture2D(uReflectionMap,
     clamp(reflectionUv + distortion, vec2(0.002), vec2(0.998))).rgb;
   vec3 waterColor = mix(refracted, reflected, clamp(fresnel * uReflectionStrength, 0.0, 0.94));
-  vec3 lightDirection = normalize(vec3(0.08, 0.16, -1.0));
+  // Match the central low sun; wide satin glints sit underneath the fine highlights.
+  vec3 lightDirection = normalize(vec3(0.0, 0.055, -1.0));
   vec3 halfVector = normalize(lightDirection + viewDirection);
   float specular = pow(max(dot(normal, halfVector), 0.0), 170.0);
-  waterColor += vec3(1.0, 0.76, 0.52) * specular * 0.36;
+  float satin = pow(max(dot(normal, halfVector), 0.0), 36.0);
+  waterColor += vec3(1.0, 0.83, 0.68) * (specular * 0.30 + satin * 0.045);
+  // Sparse submerged bioluminescence follows the same field as the quiet waves.
+  float liquidPearl = pow(max(0.0, 1.0 - abs(sin(p.x * 1.3 + p.y * 0.7
+    + sin(p.y * 0.9 - uTime * 0.12)))), 22.0);
+  float depthVeil = smoothstep(0.25, 2.5, opticalDepth) * (1.0 - fresnel);
+  waterColor += vec3(0.18, 0.42, 0.48) * liquidPearl * depthVeil * 0.017;
   // Opaque composition of two real scene passes avoids double alpha tinting.
   gl_FragColor = vec4(waterColor, 1.0);
   #include <tonemapping_fragment>

@@ -12,6 +12,7 @@ export class DiveAudio {
   private previousProgress = 0;
   private previousTime = 0;
   private lastUpdate = -Infinity;
+  private lastImpact = -Infinity;
   private readonly context: AudioContext;
 
   constructor(context: AudioContext, destination: AudioNode) {
@@ -48,7 +49,10 @@ export class DiveAudio {
   update(state: DiveState | null, enabled: boolean) {
     const now = this.context.currentTime;
     const p = state?.progress ?? 0;
-    if (enabled && state && this.previousProgress < 0.18 && p >= 0.18 && p < 0.6) {
+    const crossed = (this.previousProgress < 0.22 && p >= 0.22 && p < 0.6)
+      || (this.previousProgress > 0.46 && p <= 0.46 && p > 0.18);
+    if (enabled && state && crossed && now - this.lastImpact > 0.65) {
+      this.lastImpact = now;
       const gain = this.impact.gain;
       gain.cancelScheduledValues(now);
       gain.setValueAtTime(0, now);
@@ -61,7 +65,8 @@ export class DiveAudio {
     if (now - this.lastUpdate < 0.045) return;
     this.lastUpdate = now;
     const movement = Math.min(1, speed * 4);
-    const flow = enabled && state ? (state.contact * 0.016 + state.immersion * 0.005) * movement : 0;
+    const flow = enabled && state ? (state.contact * 0.016 + state.immersion * 0.005) * movement
+      + state.immersion * 0.0025 : 0;
     this.flow.gain.setTargetAtTime(flow, now, 0.08);
     const bubble = enabled && state ? Math.pow(Math.max(0, Math.sin(p * 48)), 12) *
       state.immersion * movement * 0.005 : 0;

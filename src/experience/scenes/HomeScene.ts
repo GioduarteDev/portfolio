@@ -2,6 +2,8 @@ import * as THREE from "three";
 
 import { createShellArchitecture } from "../home/createShellArchitecture";
 import { createDawnBackdrop } from "../home/createDawnBackdrop";
+import { createHomeAtmosphere } from "../home/createHomeAtmosphere";
+import { SanctuaryMotion } from "../home/SanctuaryMotion";
 
 import waterVertexShader from "../shaders/waterVertex";
 import waterFragmentShader from "../shaders/waterFragment";
@@ -14,22 +16,6 @@ import {
   HOME_FOG_NEAR,
   HOME_FOG_FAR,
 } from "../config/visual";
-
-const createSeededRandom = (
-  seed: number,
-) => {
-  let state = seed >>> 0;
-
-  return () => {
-    state =
-      (
-        state * 1664525 +
-        1013904223
-      ) >>> 0;
-
-    return state / 4294967296;
-  };
-};
 
 class HomeScene {
   public readonly scene: THREE.Scene;
@@ -131,12 +117,12 @@ class HomeScene {
 
   private wasHolding = false;
 
-  private particlesInitialized = false;
+  private readonly motion: SanctuaryMotion;
 
   private readonly particles:
     THREE.Points<
       THREE.BufferGeometry,
-      THREE.PointsMaterial
+      THREE.ShaderMaterial
     >;
 
   private readonly geometries:
@@ -238,8 +224,8 @@ class HomeScene {
     );
 
     /*
-     * O backdrop agora contém
-     * céu + nuvens 3D.
+     * O backdrop agora contÃ©m
+     * cÃ©u + nuvens 3D.
      *
      * Registramos tudo para
      * descarte correto depois.
@@ -430,163 +416,10 @@ class HomeScene {
       this.water,
     );
 
-    const dustCount =
-      Math.round(
-        this.quality.dustCount *
-          0.65,
-      );
-
-    const dustPositions =
-      new Float32Array(
-        dustCount * 3,
-      );
-
-    const dustRandom =
-      createSeededRandom(
-        18291,
-      );
-
-    for (
-      let index = 0;
-      index < dustCount;
-      index++
-    ) {
-      const offset =
-        index * 3;
-
-      dustPositions[offset] =
-        (
-          dustRandom() -
-          0.5
-        ) * 22;
-
-      dustPositions[
-        offset + 1
-      ] =
-        0.45 +
-        dustRandom() * 6.5;
-
-      dustPositions[
-        offset + 2
-      ] =
-        7 -
-        dustRandom() * 39;
-    }
-
-    const dustGeometry =
-      new THREE.BufferGeometry();
-
-    dustGeometry.setAttribute(
-      "position",
-
-      new THREE.BufferAttribute(
-        dustPositions,
-        3,
-      ),
-    );
-
-    this.geometries.push(
-      dustGeometry,
-    );
-
-    const dustMaterial =
-      new THREE.PointsMaterial({
-        color: "#f4e1d5",
-
-        size: 0.025,
-
-        transparent: true,
-
-        opacity: 0.3,
-
-        depthWrite: false,
-
-        sizeAttenuation: true,
-      });
-
-    const pointPixels =
-      new Uint8Array(
-        32 * 32 * 4,
-      );
-          for (
-      let y = 0;
-      y < 32;
-      y++
-    ) {
-      for (
-        let x = 0;
-        x < 32;
-        x++
-      ) {
-        const distance =
-          Math.hypot(
-            (
-              x - 15.5
-            ) / 15.5,
-
-            (
-              y - 15.5
-            ) / 15.5,
-          );
-
-        const offset =
-          (
-            y * 32 +
-            x
-          ) * 4;
-
-        pointPixels.set(
-          [
-            255,
-            255,
-            255,
-
-            Math.round(
-              Math.max(
-                0,
-                1 - distance,
-              ) **
-                2 *
-                255,
-            ),
-          ],
-
-          offset,
-        );
-      }
-    }
-
-    const pointTexture =
-      new THREE.DataTexture(
-        pointPixels,
-        32,
-        32,
-      );
-
-    pointTexture.needsUpdate =
-      true;
-
-    dustMaterial.map =
-      pointTexture;
-
-    this.textures.push(
-      pointTexture,
-    );
-
-    this.materials.push(
-      dustMaterial,
-    );
-
-    this.particles =
-      new THREE.Points(
-        dustGeometry,
-        dustMaterial,
-      );
-
-    this.scene.add(
-      this.particles,
-    );
-
+    this.motion = new SanctuaryMotion(world);
+    this.particles = createHomeAtmosphere(this.quality, this.geometries, this.materials,
+      this.motion.time, this.motion.immersion);
+    world.add(this.particles);
     const hemisphere =
       new THREE.HemisphereLight(
         "#cad8f6",
@@ -800,6 +633,10 @@ class HomeScene {
     camera:
       THREE.PerspectiveCamera,
     freezeParticles = false,
+    reducedMotion = false,
+    pointerActive = true,
+    immersion = 0,
+    anticipation = 0,
   ) {
     const delta =
       THREE.MathUtils.clamp(
@@ -924,14 +761,14 @@ class HomeScene {
     this.lastUpdateTime =
       elapsed;
 
-    this.time.value =
-      elapsed;
+    this.capturesDirty = this.motion.update(elapsed, delta, this.pointerRaycaster.ray, pointerActive,
+      freezeParticles, reducedMotion, immersion) || this.capturesDirty;
+    this.time.value = this.motion.time.value;
 
     this.waterMaterial
       .uniforms
       .uTime
-      .value =
-        elapsed;
+      .value = this.motion.time.value;
 
     this.waterMaterial
       .uniforms
@@ -971,29 +808,9 @@ class HomeScene {
             this.holdStartTime,
         );
 
-    if (
-      !freezeParticles ||
-      !this.particlesInitialized
-    ) {
-      this.particles.rotation.y =
-        Math.sin(
-          elapsed * 0.035,
-        ) * 0.012;
-
-      this.particles.position.y =
-        Math.sin(
-          elapsed * 0.09,
-        ) * 0.025;
-
-      this.updateDawnClouds(
-        elapsed,
-      );
-
-      this.particlesInitialized =
-        true;
-    }
+    this.updateDawnClouds(this.motion.time.value);
+    this.particles.material.uniforms.uCall.value = anticipation;
   }
-
   resizeReflection(
     width: number,
     height: number,
@@ -1005,8 +822,9 @@ class HomeScene {
     if (sanctuary) sanctuary.scale.x = facadeScale;
     const sky = this.dawn.children[0];
     if (sky instanceof THREE.Mesh && sky.material instanceof THREE.ShaderMaterial) {
-      sky.material.uniforms.uSunPosition.value.x = 7.5 * facadeScale;
+      sky.material.uniforms.uSunPosition.value.x = 0;
     }
+    this.particles.material.uniforms.uPixelHeight.value = height * Math.min(pixelRatio, this.quality.maxPixelRatio);
     const reflectionPixelRatio =
       Math.min(
         pixelRatio,
@@ -1246,6 +1064,7 @@ class HomeScene {
       false;
 
     try {
+      this.particles.material.uniforms.uWaterCapture.value = 1;
       for (
         const {
           mesh,
@@ -1320,6 +1139,7 @@ class HomeScene {
       this.capturesDirty =
         false;
     } finally {
+      this.particles.material.uniforms.uWaterCapture.value = 0;
       for (
         const {
           mesh,
@@ -1350,6 +1170,9 @@ class HomeScene {
   }
 
   dispose() {
+    this.scene.traverse((object) => {
+      if (object instanceof THREE.InstancedMesh) object.dispose();
+    });
     new Set(
       this.geometries,
     ).forEach(

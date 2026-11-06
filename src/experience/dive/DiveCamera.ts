@@ -8,8 +8,9 @@ export class DiveCamera {
   private readonly origin: THREE.Vector3;
   private readonly originLookAt: THREE.Vector3;
   private readonly airLookAt = new THREE.Vector3();
+  private readonly handoff = new THREE.Vector3();
   private progress = 0;
-  private readonly knots = [0, 0.18, 0.30, 0.46, 0.78, 1];
+  private readonly knots = [0, 0.18, 0.30, 0.38, 0.46, 0.78, 1];
   private readonly ys: number[];
   private readonly zs: number[];
 
@@ -17,9 +18,8 @@ export class DiveCamera {
     this.origin = position.clone();
     this.originLookAt = lookAt.clone();
     this.airCamera = camera.clone();
-    this.ys = [position.y, 0.43, 0.275, 0.04, -0.72, -1.05];
-    this.zs = [position.z, position.z - 0.22, position.z - 0.40,
-      position.z - 0.64, position.z - 1.45, position.z - 1.80];
+    this.ys = [position.y, 0.43, 0.275, 0.16, 0.025, -0.95, -1.50];
+    this.zs = [0, 0.40, 0.85, 1.16, 1.60, 3.15, 4.40].map(distance => position.z - distance);
   }
 
   update(target: number, delta: number, snapshot: boolean) {
@@ -32,27 +32,46 @@ export class DiveCamera {
     const desired = THREE.MathUtils.damp(this.progress, target, rate, stepTime);
     // Fast wheel bursts or shader-compilation stalls must not skip contact and
     // crossing. This bounds the local journey, without consuming/changing input.
-    const maximumStep = Math.min(0.035, stepTime * 0.72);
+    const surface = this.progress > 0.18 && this.progress < 0.48;
+    const maximumStep = Math.min(surface ? 0.022 : 0.035, stepTime * (surface ? 0.48 : 0.72));
     this.progress = snapshot ? target : this.progress +
       THREE.MathUtils.clamp(desired - this.progress, -maximumStep, maximumStep);
     if (Math.abs(this.progress - target) < 0.0002) this.progress = target;
     return sampleDiveState(this.progress, this.state);
   }
 
-  sample(position: THREE.Vector3, lookAt: THREE.Vector3, time: number, reducedMotion: boolean) {
+  sample(position: THREE.Vector3, lookAt: THREE.Vector3, time: number, reducedMotion: boolean,
+    preserveHomeMotion = false) {
     const p = this.state.progress;
+    this.handoff.copy(position);
     let segment = 0;
     while (segment < this.knots.length - 2 && p > this.knots[segment + 1]) segment++;
-    const t = smoothRange(this.knots[segment], this.knots[segment + 1], p);
+    const t = (p - this.knots[segment]) / (this.knots[segment + 1] - this.knots[segment]);
     position.set(this.origin.x * (1 - smoothRange(0, 0.30, p)),
-      THREE.MathUtils.lerp(this.ys[segment], this.ys[segment + 1], t),
-      THREE.MathUtils.lerp(this.zs[segment], this.zs[segment + 1], t));
-    const buoyancy = reducedMotion ? 0 : this.state.immersion * 0.009;
+      this.interpolate(this.ys, segment, t), this.interpolate(this.zs, segment, t));
+    const buoyancy = reducedMotion ? 0 : this.state.immersion * 0.018;
     position.y += Math.sin(time * 0.62) * buoyancy;
     position.x += Math.sin(time * 0.37) * buoyancy * 0.65;
+    if (preserveHomeMotion) position.lerpVectors(this.handoff, position, smoothRange(0, 0.10, p));
     lookAt.copy(this.originLookAt);
-    lookAt.y = THREE.MathUtils.lerp(lookAt.y, position.y + 0.035, smoothRange(0, 0.46, p));
+    lookAt.y = THREE.MathUtils.lerp(lookAt.y, position.y - 0.11 * this.state.descent,
+      smoothRange(0, 0.46, p));
     lookAt.z = THREE.MathUtils.lerp(lookAt.z, -25, smoothRange(0.18, 1, p));
+  }
+
+  /** Monotone Hermite interpolation preserves velocity through the knots,
+   * without vertical overshoot or the stop/start of per-segment smoothsteps. */
+  private interpolate(values: number[], segment: number, t: number) {
+    const slope = (i: number) => (values[i + 1] - values[i]) / (this.knots[i + 1] - this.knots[i]);
+    const tangent = (i: number) => {
+      if (i === 0 || i === values.length - 1) return 0;
+      const a = slope(i - 1), b = slope(i);
+      return a * b <= 0 ? 0 : 2 * a * b / (a + b);
+    };
+    const span = this.knots[segment + 1] - this.knots[segment];
+    const t2 = t * t, t3 = t2 * t;
+    return (2 * t3 - 3 * t2 + 1) * values[segment] + (t3 - 2 * t2 + t) * tangent(segment) * span
+      + (-2 * t3 + 3 * t2) * values[segment + 1] + (t3 - t2) * tangent(segment + 1) * span;
   }
 
   /** Above-water rays for the remaining air region. The physical view camera
