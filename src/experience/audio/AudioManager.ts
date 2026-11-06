@@ -1,15 +1,8 @@
-const AUDIO_CONFIG = {
-  musicUrl: "/audio/ambient-loop.mp3",
-  masterFadeSeconds: 0.48,
-  musicFadeSeconds: 0.56,
-  musicGain: 0.68,
-  submergedMusicGain: 0.58,
-  normalCutoff: 20_000,
-  submergedCutoff: 1_650,
-  cutoffUpdateInterval: 0.08,
-  cutoffUpdateThreshold: 70,
-  cutoffSmoothingSeconds: 0.22,
-} as const;
+import { AUDIO_VALUES } from "../config/visual";
+import { DiveAudio } from "../dive/DiveAudio";
+import type { DiveState } from "../dive/diveTimeline";
+
+const AUDIO_CONFIG = AUDIO_VALUES;
 
 type AudioManagerState = {
   readonly initialized: boolean;
@@ -31,6 +24,8 @@ class AudioManager {
   private effectsGain: GainNode | null = null;
 
   private lowPass: BiquadFilterNode | null = null;
+  private diveReverb: GainNode | null = null;
+  private lastReverbTarget = 0;
 
   private musicSource: AudioBufferSourceNode | null = null;
 
@@ -39,6 +34,10 @@ class AudioManager {
   private musicLoadPromise: Promise<AudioBuffer | null> | null = null;
 
   private musicLoadComplete = false;
+
+  private procedural: Array<OscillatorNode | AudioBufferSourceNode> = [];
+
+  private musicActive = false;
 
   private readonly ownedNodes = new Set<AudioNode>();
 
@@ -53,6 +52,7 @@ class AudioManager {
   private lastMusicGainTarget = 0;
 
   private immersion = 0;
+  private diveAudio: DiveAudio | null = null;
 
   private disposed = false;
 
@@ -90,8 +90,17 @@ class AudioManager {
       this.lowPass.frequency.value = AUDIO_CONFIG.normalCutoff;
       this.lowPass.Q.value = 0.7;
 
-      this.lowPass.connect(this.musicGain);
-      this.musicGain.connect(this.masterGain);
+      this.musicGain.connect(this.lowPass);
+      this.lowPass.connect(this.masterGain);
+      const chamber = this.context.createConvolver();
+      chamber.buffer = this.createImpulseResponse(this.context, 0.85);
+      this.diveReverb = this.context.createGain();
+      this.diveReverb.gain.value = 0;
+      this.lowPass.connect(chamber);
+      chamber.connect(this.diveReverb);
+      this.diveReverb.connect(this.masterGain);
+      this.ownedNodes.add(chamber);
+      this.ownedNodes.add(this.diveReverb);
       this.effectsGain.connect(this.masterGain);
       this.masterGain.connect(this.context.destination);
 
@@ -99,63 +108,219 @@ class AudioManager {
       this.ownedNodes.add(this.musicGain);
       this.ownedNodes.add(this.effectsGain);
       this.ownedNodes.add(this.lowPass);
+      this.diveAudio = new DiveAudio(this.context, this.masterGain);
 
       this.isInitialized = true;
       this.lastCutoffTarget = AUDIO_CONFIG.normalCutoff;
     }
 
+    const wasSuspended = this.context.state !== "running";
     await this.context.resume();
+    if (wasSuspended && import.meta.env.DEV) {
+      console.info("[Audio] context resumed");
+    }
   }
 
+  setEnabled(enabled: boolean, fadeSeconds?: number): Promise<void> {
+    return this.setMuted(!enabled, fadeSeconds);
+  }
+
+  setTransitionProgress(progress: number, isProjectsPhase = false): void {
+    this.updateTransition(progress, isProjectsPhase);
+  }
+
+  update(progress: number, isProjectsPhase = false): void {
+    this.updateTransition(progress, isProjectsPhase);
+  }
+
+  updateDive(state: DiveState | null): void {
+    // Never initialize/resume audio here: only the existing gesture can do so.
+    const immersion = state ? Math.max(state.immersion, state.contact * 0.45) : 0;
+    if (state) this.updateTransition(immersion, false);
+    const reverberation = immersion * 0.10;
+    if (this.context && this.diveReverb && Math.abs(reverberation - this.lastReverbTarget) > 0.002) {
+      this.diveReverb.gain.setTargetAtTime(reverberation, this.context.currentTime, 0.18);
+      this.lastReverbTarget = reverberation;
+    }
+    this.diveAudio?.update(state, state !== null && !this.isMuted);
+  }
+
+  // Starts the track (or procedural fallback) once; it keeps running while muted.
   async startMusic(): Promise<boolean> {
-    if (!this.isInitialized || !this.context || !this.lowPass) {
+    if (!this.isInitialized || !this.context || !this.musicGain) {
       throw new Error(
         "Initialize AudioManager from a user gesture before starting music.",
       );
     }
 
-    if (this.musicSource) {
+    if (this.musicActive) {
       return true;
     }
 
     const buffer = await this.loadMusic();
 
-    if (!buffer || !this.context || !this.lowPass || !this.musicGain) {
-      return false;
-    }
-
-    if (this.musicSource) {
+    if (this.musicActive) {
       return true;
     }
 
-    if (this.disposed) {
+    if (this.disposed || !this.context || !this.musicGain) {
       return false;
     }
 
-    const source = this.context.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-    source.connect(this.lowPass);
-    source.start();
-    this.musicSource = source;
-    this.ownedNodes.add(source);
+    if (buffer) {
+      const source = this.context.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+      source.connect(this.musicGain);
+      source.start();
+      this.musicSource = source;
+      this.ownedNodes.add(source);
+      if (import.meta.env.DEV) {
+        console.info("[Audio] using file soundtrack");
+      }
+    } else {
+      this.startProceduralAmbience(this.context, this.musicGain);
+      if (import.meta.env.DEV) {
+        console.info("[Audio] using procedural fallback");
+      }
+    }
 
-    this.setAudioParamTarget(
-      this.musicGain.gain,
-      this.isMuted
-        ? 0
-        : this.musicGainForImmersion(this.immersion),
-      AUDIO_CONFIG.musicFadeSeconds,
-    );
+    this.musicActive = true;
     this.lastMusicGainTarget =
       this.musicGainForImmersion(this.immersion);
+    this.setAudioParamTarget(
+      this.musicGain.gain,
+      this.lastMusicGainTarget,
+      AUDIO_CONFIG.musicFadeSeconds,
+    );
 
     return true;
   }
 
+  private startProceduralAmbience(
+    context: AudioContext,
+    destination: AudioNode,
+  ): void {
+    const out = context.createGain();
+    out.gain.value = 0.9;
+    this.ownedNodes.add(out);
+
+    const tone = context.createBiquadFilter();
+    tone.type = "lowpass";
+    tone.frequency.value = 1500;
+    tone.Q.value = 0.4;
+    tone.connect(out);
+    this.ownedNodes.add(tone);
+
+    const reverb = context.createConvolver();
+    reverb.buffer = this.createImpulseResponse(context, 4.5);
+    const wet = context.createGain();
+    wet.gain.value = 0.55;
+    tone.connect(reverb);
+    reverb.connect(wet);
+    wet.connect(out);
+    this.ownedNodes.add(reverb);
+    this.ownedNodes.add(wet);
+
+    const addLfo = (
+      frequency: number,
+      depth: number,
+      target: AudioParam,
+    ) => {
+      const lfo = context.createOscillator();
+      const lfoDepth = context.createGain();
+      lfo.type = "sine";
+      lfo.frequency.value = frequency;
+      lfoDepth.gain.value = depth;
+      lfo.connect(lfoDepth);
+      lfoDepth.connect(target);
+      lfo.start();
+      this.procedural.push(lfo);
+      this.ownedNodes.add(lfo);
+      this.ownedNodes.add(lfoDepth);
+    };
+
+    // A minor, open voicing: root, fifth, octave, ninth, tenth.
+    const voices: ReadonlyArray<
+      readonly [number, OscillatorType, number, number]
+    > = [
+      [55, "sine", 0.1, 0.031],
+      [82.41, "sine", 0.075, 0.047],
+      [110, "triangle", 0.035, 0.037],
+      [164.81, "sine", 0.05, 0.053],
+      [246.94, "sine", 0.025, 0.043],
+      [329.63, "sine", 0.014, 0.029],
+    ];
+
+    voices.forEach(([frequency, type, level, lfoRate], index) => {
+      const oscillator = context.createOscillator();
+      const voiceGain = context.createGain();
+      oscillator.type = type;
+      oscillator.frequency.value = frequency;
+      oscillator.detune.value = (index % 2 === 0 ? 1 : -1) * (3 + index);
+      voiceGain.gain.value = level;
+      oscillator.connect(voiceGain);
+      voiceGain.connect(tone);
+      oscillator.start();
+      addLfo(lfoRate, level * 0.6, voiceGain.gain);
+      this.procedural.push(oscillator);
+      this.ownedNodes.add(oscillator);
+      this.ownedNodes.add(voiceGain);
+    });
+
+    addLfo(0.021, 500, tone.frequency);
+
+    // Barely audible air, low-passed so it reads as space rather than hiss.
+    const noiseBuffer = context.createBuffer(
+      1,
+      context.sampleRate * 4,
+      context.sampleRate,
+    );
+    const data = noiseBuffer.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < data.length; i += 1) {
+      last = last * 0.98 + (Math.random() * 2 - 1) * 0.02;
+      data[i] = last * 6;
+    }
+    const noise = context.createBufferSource();
+    noise.buffer = noiseBuffer;
+    noise.loop = true;
+    const noiseFilter = context.createBiquadFilter();
+    noiseFilter.type = "lowpass";
+    noiseFilter.frequency.value = 420;
+    const noiseGain = context.createGain();
+    noiseGain.gain.value = 0.012;
+    noise.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(tone);
+    noise.start();
+    this.procedural.push(noise);
+    this.ownedNodes.add(noise);
+    this.ownedNodes.add(noiseFilter);
+    this.ownedNodes.add(noiseGain);
+
+    out.connect(destination);
+  }
+
+  private createImpulseResponse(
+    context: AudioContext,
+    seconds: number,
+  ): AudioBuffer {
+    const length = Math.floor(context.sampleRate * seconds);
+    const impulse = context.createBuffer(2, length, context.sampleRate);
+    for (let channel = 0; channel < 2; channel += 1) {
+      const data = impulse.getChannelData(channel);
+      for (let i = 0; i < length; i += 1) {
+        data[i] =
+          (Math.random() * 2 - 1) * Math.pow(1 - i / length, 3);
+      }
+    }
+    return impulse;
+  }
+
   async setMuted(
     muted: boolean,
-    fadeSeconds = AUDIO_CONFIG.masterFadeSeconds,
+    fadeSeconds: number = AUDIO_CONFIG.masterFadeSeconds,
   ): Promise<void> {
     this.isMuted = muted;
     const version = ++this.muteChangeVersion;
@@ -180,17 +345,6 @@ class AudioManager {
       fadeSeconds,
     );
 
-    if (this.musicGain && this.musicSource) {
-      this.setAudioParamTarget(
-        this.musicGain.gain,
-        muted
-          ? 0
-          : this.musicGainForImmersion(this.immersion),
-        AUDIO_CONFIG.masterFadeSeconds,
-      );
-      this.lastMusicGainTarget =
-        this.musicGainForImmersion(this.immersion);
-    }
   }
 
   updateTransition(
@@ -205,10 +359,8 @@ class AudioManager {
       ? 0
       : Math.min(1, Math.max(0, transitionProgress));
     this.immersion = immersion;
-    const cutoffTarget =
-      AUDIO_CONFIG.normalCutoff +
-      (AUDIO_CONFIG.submergedCutoff - AUDIO_CONFIG.normalCutoff) *
-        immersion;
+    const cutoffTarget = AUDIO_CONFIG.normalCutoff *
+      Math.pow(AUDIO_CONFIG.submergedCutoff / AUDIO_CONFIG.normalCutoff, immersion);
     const now = this.context.currentTime;
 
     if (
@@ -226,11 +378,7 @@ class AudioManager {
       this.lastCutoffUpdateTime = now;
     }
 
-    if (
-      !this.isMuted &&
-      this.musicGain &&
-      this.musicSource
-    ) {
+    if (this.musicGain && this.musicActive) {
       const volume = this.musicGainForImmersion(immersion);
       if (Math.abs(volume - this.lastMusicGainTarget) < 0.005) {
         return;
@@ -297,10 +445,24 @@ class AudioManager {
   }
 
   dispose(): void {
+    this.diveAudio?.dispose();
+    this.diveAudio = null;
     this.disposed = true;
     this.isInitialized = false;
     this.musicSource?.stop();
     this.musicSource = null;
+    for (const node of this.procedural) {
+      try {
+        node.stop();
+      } catch {
+        // already stopped
+      }
+    }
+    this.procedural = [];
+    this.musicActive = false;
+    this.musicLoadComplete = false;
+    this.musicLoadPromise = null;
+    this.musicBuffer = null;
 
     for (const node of this.ownedNodes) {
       node.disconnect();
@@ -313,6 +475,8 @@ class AudioManager {
     this.musicGain = null;
     this.effectsGain = null;
     this.lowPass = null;
+    this.diveReverb = null;
+    this.lastReverbTarget = 0;
 
     if (context && context.state !== "closed") {
       void context.close().catch((error: unknown) => {
@@ -340,22 +504,18 @@ class AudioManager {
     this.musicLoadPromise = (async () => {
       try {
         const response = await fetch(AUDIO_CONFIG.musicUrl);
+        const type = response.headers.get("content-type") ?? "";
 
-        if (!response.ok) {
-          throw new Error(
-            `Music request failed with HTTP ${response.status}.`,
-          );
+        // Dev servers answer missing files with index.html (200).
+        if (!response.ok || type.includes("text/html")) {
+          return null;
         }
 
         const audioData = await response.arrayBuffer();
         const buffer = await context.decodeAudioData(audioData);
         this.musicBuffer = buffer;
         return buffer;
-      } catch (error) {
-        console.warn(
-          `Ambient music is unavailable at ${AUDIO_CONFIG.musicUrl}; the experience will continue silently until an authorized track is added.`,
-          error,
-        );
+      } catch {
         return null;
       } finally {
         this.musicLoadComplete = true;

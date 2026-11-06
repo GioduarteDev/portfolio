@@ -8,7 +8,6 @@ import {
 
 import gsap from "gsap";
 
-import "./index.css";
 
 import ExperienceCanvas from "./experience/ExperienceCanvas";
 import type {
@@ -23,6 +22,7 @@ import {
 } from "./experience/scenes/ProjectsScene";
 import type { WorldSelection } from "./experience/scenes/WorldScene";
 import {
+  PROJECT_ITEMS,
   getProjectBySlug,
 } from "./experience/data/projects";
 import {
@@ -359,6 +359,7 @@ function App() {
   async function configureAudio(
     enabled: boolean,
     request: number,
+    fadeSeconds?: number,
   ) {
     try {
       await audioManager.initialize();
@@ -367,15 +368,14 @@ function App() {
         return;
       }
 
-      if (enabled) {
-        await audioManager.startMusic();
-      }
+      // Music always runs so it keeps its place in time while muted.
+      await audioManager.startMusic();
 
       if (request !== audioRequestRef.current) {
         return;
       }
 
-      await audioManager.setMuted(!enabled);
+      await audioManager.setEnabled(enabled, fadeSeconds);
     } catch (error) {
       console.error(
         "Unable to initialize or update audio playback.",
@@ -402,7 +402,7 @@ function App() {
         ? `#projects/${encodeURIComponent(requestedSlug)}`
         : `#${requestedSection}`,
     );
-    void configureAudio(withAudio, request);
+    void configureAudio(withAudio, request, withAudio ? 2 : 0.3);
   }
 
   function toggleAudio() {
@@ -547,7 +547,7 @@ function App() {
         <section className="intro" data-testid="visual-intro">
           <div
             className="unseen-mark unseen-mark--intro"
-            aria-label="Unseen"
+            aria-label="Giovanna Duarte Portfolio"
             role="img"
           >
             <span>U</span>
@@ -560,15 +560,11 @@ function App() {
 
           <div className="intro__content">
             <p className="intro__name">
-              Unseen Studio®
+              Giovanna Duarte
             </p>
 
             <p className="intro__description">
-              A brand, digital and motion
-              studio creating refreshingly
-              unexpected ideas and striking
-              visuals that help bold brands
-              cut through the noise.
+              Engenharia de software, design e experiências digitais construídas entre tecnologia, movimento, água e imaginação.
             </p>
 
             <div className="intro__actions">
@@ -643,14 +639,14 @@ function App() {
               </button>
 
               <div className="experience-header__contact">
-                <span>
-                  ⮡ projects@unseen.co
-                </span>
+        <span>
+          ⮡ Giovanna Duarte
+      </span>
 
-                <span>
-                  ⮡ (+44) 0117 922 6892
-                </span>
-              </div>
+        <span>
+      ⮡ Brasília · Brasil
+  </span>
+</div>
             </header>
 
             <div className="experience-controls">
@@ -661,11 +657,10 @@ function App() {
               <button
                 type="button"
                 className="ui-link"
+                aria-pressed={audioEnabled}
                 onClick={toggleAudio}
               >
-                {audioEnabled
-                  ? "Sound On"
-                  : "Toggle Sound"}
+                {audioEnabled ? "Sound On" : "Sound Off"}
               </button>
             </div>
           </div>
@@ -689,6 +684,27 @@ function App() {
           ================================== */}
 
           <div className="projects-interface">
+            <div
+              className="project-meta-layer"
+              aria-hidden="true"
+            >
+              {PROJECT_ITEMS.map((item) => (
+                <div
+                  key={item.id}
+                  className="project-meta"
+                  data-project-id={item.id}
+                >
+                  <span className="project-meta__title">
+                    {item.title}
+                  </span>
+                  <span className="project-meta__info">
+                    {item.categories.join(" / ")}
+                    <i>{item.year}</i>
+                  </span>
+                </div>
+              ))}
+            </div>
+
             {/* PROJECTS INTRO */}
 
             <div className="projects-interface__intro">
@@ -785,7 +801,7 @@ function App() {
             <div className="experience-menu__backdrop" />
             <div className="experience-menu__panel">
               <div className="experience-menu__topline">
-                <span>UNSEEN STUDIO®</span>
+                <span><span>GIOVANNA DUARTE®</span></span>
                 <button
                   type="button"
                   className="experience-menu__close"
@@ -825,7 +841,7 @@ function App() {
               </nav>
 
               <p className="experience-menu__footer">
-                Bristol · United Kingdom
+                Brasília · Brasil
               </p>
             </div>
           </div>
@@ -838,7 +854,7 @@ function App() {
               aria-labelledby="section-overlay-title"
             >
               <div className="section-overlay__topline">
-                <span>UNSEEN STUDIO®</span>
+                <span>Giovanna Duarte®</span>
                 <button
                   ref={overlayCloseRef}
                   type="button"
@@ -870,7 +886,7 @@ function App() {
                     (+44) 0117 922 6892
                   </a>
                   <p className="section-overlay__address">
-                    Bristol · United Kingdom
+                    Brasília · Brasil
                   </p>
                 </div>
               ) : (

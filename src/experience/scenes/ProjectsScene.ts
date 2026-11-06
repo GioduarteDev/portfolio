@@ -5,6 +5,10 @@ import {
   type ProjectItem,
 } from "../data/projects";
 import type { QualitySettings } from "../core/quality";
+import { PROJECT_SCENE_VALUES } from "../config/visual";
+import { createProjectWaterVolume, createMineralPanelGeometry } from "../dive/createProjectWaterVolume";
+import { createShellThread } from "../dive/createShellThread";
+import { addSubtleCaustics } from "../home/createCaustics";
 
 export {
   PROJECT_FILTERS,
@@ -13,45 +17,7 @@ export {
   type ProjectItem,
 } from "../data/projects";
 
-export const PROJECT_SCENE_CONFIG = {
-  background: "#f0eeea",
-  fogNear: 34,
-  fogFar: 62,
-  cameraFov: 43,
-  cameraNear: 0.1,
-  cameraFar: 100,
-  cameraZ: -17,
-  cameraTargetZ: -27,
-  planeZ: -26.5,
-  architectureZ: -36,
-  floorY: -5.2,
-  columnX: [-2.55, 2.55] as const,
-  rowGap: 5.25,
-  firstRowY: 4.1,
-  columnYStagger: [0.18, -0.16] as const,
-  imageMaxWidth: 3.75,
-  imageMaxHeight: 3.45,
-  shadowOffset: [0.055, -0.075, -0.035] as const,
-  scrollDistancePerOffset: 20,
-  endSectionViewports: 1.15,
-  visibleRange: 5.7,
-  fadeRange: 1.7,
-  minimumResponsiveScale: 0.34,
-  responsiveReferenceAspect: 1.48,
-  maximumResponsiveScale: 1,
-  filterTransitionDuration: 0.48,
-  swayAmplitude: 0.012,
-  swayFrequency: 0.16,
-  columnYaw: 0.009,
-  scrollTiltScale: 0.0025,
-  maximumScrollTilt: 0.014,
-  particles: 150,
-  particleWidth: 17,
-  particleHeight: 12,
-  particleNearZ: -27,
-  particleDepth: 13,
-  reflectionDepthOffset: 0.035,
-} as const;
+export const PROJECT_SCENE_CONFIG = PROJECT_SCENE_VALUES;
 
 type ProjectCard = {
   item: ProjectItem;
@@ -61,7 +27,12 @@ type ProjectCard = {
     THREE.MeshBasicMaterial
   >;
   shadowMaterial: THREE.MeshBasicMaterial;
+  frame: THREE.Mesh<THREE.ExtrudeGeometry, THREE.MeshPhysicalMaterial>;
   readonly baseY: number;
+  readonly width: number;
+  readonly height: number;
+  metaElement: HTMLElement | null;
+  metaVisible: boolean;
   targetBaseY: number;
   targetColumn: 0 | 1;
   currentColumn: number;
@@ -89,6 +60,8 @@ class ProjectsScene {
   private readonly gallery = new THREE.Group();
 
   private readonly architecture = new THREE.Group();
+  private readonly waterTime = { value: 0 };
+  private readonly narrativeThread: THREE.Mesh;
 
   private readonly projectCards: ProjectCard[] = [];
 
@@ -100,6 +73,8 @@ class ProjectsScene {
   private readonly projectRaycaster = new THREE.Raycaster();
 
   private readonly projectPointer = new THREE.Vector2();
+
+  private readonly metaPoint = new THREE.Vector3();
 
   private readonly geometries: THREE.BufferGeometry[] = [];
 
@@ -154,6 +129,16 @@ class ProjectsScene {
 
     this.scene.add(this.architecture, this.gallery);
     this.createArchitecture();
+    this.scene.add(createProjectWaterVolume(this.geometries, this.materials, this.waterTime));
+    this.scene.add(new THREE.HemisphereLight("#D0E6F0", "#507786", 1.5));
+    const pearlLight = new THREE.DirectionalLight("#F3E4D5", 1.2);
+    pearlLight.position.set(-4, 7, -19);
+    pearlLight.target.position.set(0, 0, -30);
+    this.scene.add(pearlLight, pearlLight.target);
+    const threadPoints = Array.from({ length: 100 }, (_, i) =>
+      new THREE.Vector3(Math.sin(i * 0.17) * 4.6, 5 - i * 0.55, -28.7 + Math.cos(i * 0.17) * 0.3));
+    this.narrativeThread = createShellThread(threadPoints, this.geometries, this.materials, this.waterTime, 0.012);
+    this.scene.add(this.narrativeThread);
     this.createProjects(PROJECT_ITEMS);
 
     this.particles = this.createParticles();
@@ -163,7 +148,7 @@ class ProjectsScene {
   private createArchitecture() {
     const wallGeometry = new THREE.PlaneGeometry(38, 28);
     const wallMaterial = new THREE.MeshBasicMaterial({
-      color: "#e8e5e0",
+      color: "#A2BBC3",
       side: THREE.DoubleSide,
     });
 
@@ -178,55 +163,76 @@ class ProjectsScene {
     );
     this.architecture.add(wall);
 
-    const archMaterial = new THREE.MeshBasicMaterial({
-      color: "#dedbd5",
-      side: THREE.DoubleSide,
-    });
-    this.materials.push(archMaterial);
-
-    const archPositions = [
-      { x: -8.7, y: -0.45, scale: 1.05, depth: -0.1 },
-      { x: 0, y: -0.25, scale: 1.4, depth: 0.32 },
-      { x: 8.7, y: -0.5, scale: 0.98, depth: 0.04 },
+    const layers = [
+      { color: "#9DB9C2", z: 2.2, scale: 1.28, xs: [-12.5, -2.6, 8.2, 17.5], y: -0.8 },
+      { color: "#8EACB9", z: 0.4, scale: 1.1, xs: [-9.4, 0, 9.4], y: -0.45 },
+      { color: "#7D9CAA", z: -1.6, scale: 0.9, xs: [-5.2, 5.2], y: -0.1 },
     ] as const;
 
-    for (const archPosition of archPositions) {
-      const geometry = this.createArchGeometry();
-      this.geometries.push(geometry);
+    const archGeometry = this.createArchGeometry();
+    this.geometries.push(archGeometry);
 
-      const arch = new THREE.Mesh(geometry, archMaterial);
-      arch.position.set(
-        archPosition.x,
-        archPosition.y,
-        PROJECT_SCENE_CONFIG.architectureZ + archPosition.depth,
-      );
-      arch.scale.setScalar(archPosition.scale);
-      this.architecture.add(arch);
+    for (const layer of layers) {
+      const material = new THREE.MeshBasicMaterial({
+        color: layer.color,
+        side: THREE.DoubleSide,
+      });
+      this.materials.push(material);
+
+      for (const x of layer.xs) {
+        const arch = new THREE.Mesh(archGeometry, material);
+        arch.position.set(
+          x,
+          layer.y,
+          PROJECT_SCENE_CONFIG.architectureZ + layer.z,
+        );
+        arch.scale.setScalar(layer.scale);
+        this.architecture.add(arch);
+      }
     }
 
-    const columnGeometry = new THREE.CylinderGeometry(
-      0.16,
-      0.19,
-      9.2,
-      20,
-      1,
-    );
-    const columnPositions = [-11.1, -5.4, 5.4, 11.1] as const;
-    this.geometries.push(columnGeometry);
+    const pierGeometry = new THREE.BoxGeometry(0.7, 11, 0.9);
+    this.geometries.push(pierGeometry);
+    const pierMaterial = new THREE.MeshBasicMaterial({
+      color: "#91ADBB",
+    });
+    this.materials.push(pierMaterial);
 
-    for (const x of columnPositions) {
-      const column = new THREE.Mesh(columnGeometry, archMaterial);
+    const piers = [
+      { x: -14.2, z: 4.6 },
+      { x: -7, z: 3.1 },
+      { x: 7, z: 3.1 },
+      { x: 14.2, z: 4.6 },
+    ] as const;
+
+    for (const pier of piers) {
+      const mesh = new THREE.Mesh(pierGeometry, pierMaterial);
+      mesh.position.set(
+        pier.x,
+        -0.2,
+        PROJECT_SCENE_CONFIG.architectureZ + pier.z,
+      );
+      this.architecture.add(mesh);
+    }
+
+    const columnGeometry = new THREE.CylinderGeometry(0.16, 0.19, 9.2, 20, 1);
+    this.geometries.push(columnGeometry);
+    const columnMaterial = new THREE.MeshBasicMaterial({ color: "#A5BFCA" });
+    this.materials.push(columnMaterial);
+
+    for (const x of [-4.4, 4.4]) {
+      const column = new THREE.Mesh(columnGeometry, columnMaterial);
       column.position.set(
         x,
         -0.45,
-        PROJECT_SCENE_CONFIG.architectureZ + 0.55,
+        PROJECT_SCENE_CONFIG.architectureZ + 0.9,
       );
       this.architecture.add(column);
     }
 
     const floorGeometry = new THREE.PlaneGeometry(42, 40);
     const floorMaterial = new THREE.MeshBasicMaterial({
-      color: "#e9e6e1",
+      color: "#9DB7BF",
       side: THREE.DoubleSide,
     });
     const floor = new THREE.Mesh(floorGeometry, floorMaterial);
@@ -293,6 +299,17 @@ class ProjectsScene {
         PROJECT_SCENE_CONFIG.imageMaxHeight * item.aspectRatio,
       );
       const height = width / item.aspectRatio;
+      const frameGeometry = createMineralPanelGeometry(width, height);
+      const frameMaterial = new THREE.MeshPhysicalMaterial({
+        name: "immersed moonstone project capsule", color: "#BED5DF", roughness: 0.34,
+        metalness: 0.1, clearcoat: 0.35, transparent: true,
+        emissive: "#8CABB9", emissiveIntensity: 0.06,
+      });
+      addSubtleCaustics(frameMaterial, this.waterTime, this.quality.mode === "low" ? 0 : 0.04, 6.5);
+      const frame = new THREE.Mesh(frameGeometry, frameMaterial);
+      frame.name = `${item.id} sculpted mineral project panel`;
+      this.geometries.push(frameGeometry);
+      this.materials.push(frameMaterial);
       const imageGeometry = new THREE.PlaneGeometry(width, height);
       const imageMaterial = new THREE.MeshBasicMaterial({
         color: "#d8d5d0",
@@ -326,7 +343,7 @@ class ProjectsScene {
         baseY,
         PROJECT_SCENE_CONFIG.planeZ,
       );
-      group.add(shadow, image);
+      group.add(frame, shadow, image);
       this.gallery.add(group);
 
       this.geometries.push(imageGeometry, shadowGeometry);
@@ -336,7 +353,12 @@ class ProjectsScene {
         group,
         image,
         shadowMaterial,
+        frame,
         baseY,
+        width,
+        height,
+        metaElement: null,
+        metaVisible: false,
         targetBaseY: baseY,
         targetColumn: item.column,
         currentColumn: item.column,
@@ -361,7 +383,6 @@ class ProjectsScene {
       this.loadingTextures.has(path) ||
       this.failedTextures.has(path)
     ) return;
-    this.loadingTextures.add(path);
     this.loadingTextures.add(path);
     const texture = this.textureLoader.load(
       path,
@@ -426,10 +447,10 @@ class ProjectsScene {
     );
 
     const material = new THREE.PointsMaterial({
-      color: "#a9a49e",
-      size: 0.018,
+      color: "#8f8a83",
+      size: 0.011,
       transparent: true,
-      opacity: 0.22,
+      opacity: 0.12,
       depthWrite: false,
       sizeAttenuation: true,
     });
@@ -641,7 +662,9 @@ class ProjectsScene {
     projectsOffset: number,
     scrollVelocity: number,
     freezeParticles = false,
+    reducedMotion = false,
   ) {
+    if (!freezeParticles && !reducedMotion) this.waterTime.value = elapsed;
     const responsiveScale = THREE.MathUtils.clamp(
       this.viewportAspect /
         PROJECT_SCENE_CONFIG.responsiveReferenceAspect,
@@ -652,6 +675,8 @@ class ProjectsScene {
       projectsOffset *
       PROJECT_SCENE_CONFIG.scrollDistancePerOffset;
     this.lastScrollDistance = scrollDistance;
+    this.narrativeThread.scale.set(responsiveScale, responsiveScale, 1);
+    this.narrativeThread.position.y = scrollDistance * responsiveScale;
 
     const transitionProgress = THREE.MathUtils.clamp(
       (elapsed - this.transitionStartedAt) /
@@ -672,6 +697,12 @@ class ProjectsScene {
       scrollVelocity * PROJECT_SCENE_CONFIG.scrollTiltScale,
       -PROJECT_SCENE_CONFIG.maximumScrollTilt,
       PROJECT_SCENE_CONFIG.maximumScrollTilt,
+    );
+
+    const scrollStretch = THREE.MathUtils.clamp(
+      Math.abs(scrollVelocity) * 0.0004,
+      0,
+      PROJECT_SCENE_CONFIG.maximumScrollStretch,
     );
 
     for (const card of this.projectCards) {
@@ -742,7 +773,11 @@ class ProjectsScene {
         y,
         PROJECT_SCENE_CONFIG.planeZ,
       );
-      card.group.scale.setScalar(responsiveScale);
+      card.group.scale.set(
+        responsiveScale,
+        responsiveScale * (1 + scrollStretch),
+        responsiveScale,
+      );
       card.group.rotation.set(
         THREE.MathUtils.clamp(
           -y * 0.0012,
@@ -756,15 +791,64 @@ class ProjectsScene {
       );
 
       card.image.material.opacity = opacity;
+      card.frame.material.opacity = opacity;
+      card.frame.material.depthWrite = opacity > 0.98;
+      card.frame.visible = opacity > 0.002;
       card.shadowMaterial.opacity = 0.075 * opacity;
-      card.image.position.y =
-        Math.sin(elapsed * 0.22 + card.phase) * 0.008;
+      card.image.position.y = reducedMotion ? 0 : Math.sin(elapsed * 0.22 + card.phase) * 0.008;
     }
 
-    this.architecture.position.y = Math.sin(elapsed * 0.055) * 0.012;
-    if (!freezeParticles) {
+    this.architecture.position.y = reducedMotion ? 0 : Math.sin(elapsed * 0.055) * 0.012;
+    if (!freezeParticles && !reducedMotion) {
       this.particles.rotation.y = Math.sin(elapsed * 0.03) * 0.009;
       this.particles.position.y = Math.sin(elapsed * 0.12) * 0.025;
+    }
+  }
+
+  attachMetaLayer(layer: HTMLElement | null) {
+    for (const card of this.projectCards) {
+      card.metaElement =
+        layer?.querySelector<HTMLElement>(
+          `[data-project-id="${card.item.id}"]`,
+        ) ?? null;
+      card.metaVisible = false;
+    }
+  }
+
+  updateMeta(
+    camera: THREE.PerspectiveCamera,
+    viewportWidth: number,
+    viewportHeight: number,
+    active: boolean,
+  ) {
+    const point = this.metaPoint;
+    for (const card of this.projectCards) {
+      const element = card.metaElement;
+      if (!element) continue;
+
+      const opacity = active ? card.image.material.opacity : 0;
+      const visible = card.group.visible && opacity > 0.02;
+      if (!visible) {
+        if (card.metaVisible) {
+          element.style.opacity = "0";
+          card.metaVisible = false;
+        }
+        continue;
+      }
+
+      point.set(
+        card.group.position.x - (card.width * card.group.scale.x) / 2,
+        card.group.position.y - (card.height * card.group.scale.y) / 2,
+        card.group.position.z,
+      );
+      point.project(camera);
+      const px = (point.x * 0.5 + 0.5) * viewportWidth;
+      const py = (-point.y * 0.5 + 0.5) * viewportHeight;
+      element.style.transform = `translate3d(${px.toFixed(1)}px, ${(
+        py + PROJECT_SCENE_CONFIG.metaOffsetPx
+      ).toFixed(1)}px, 0)`;
+      element.style.opacity = opacity.toFixed(3);
+      card.metaVisible = true;
     }
   }
 
