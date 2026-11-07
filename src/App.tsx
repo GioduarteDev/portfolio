@@ -1,15 +1,13 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
 } from "react";
 
-import gsap from "gsap";
-
-
 import ExperienceCanvas from "./experience/ExperienceCanvas";
+import SanctuaryPortal from "./components/SanctuaryPortal/SanctuaryPortal";
+import { CONTACT } from "./content/contact";
 import type {
   ExperienceCanvasHandle,
   ExperienceSceneSection,
@@ -105,15 +103,6 @@ function App() {
     audioEnabled,
     setAudioEnabled,
   ] = useState(false);
-
-  const loaderRef =
-    useRef<HTMLElement>(null);
-
-  const lettersRef =
-    useRef<HTMLDivElement>(null);
-
-  const loadingRef =
-    useRef<HTMLDivElement>(null);
 
   const audioRequestRef = useRef(0);
   const experienceRef =
@@ -266,96 +255,6 @@ function App() {
     sceneSection,
   ]);
 
-  useLayoutEffect(() => {
-    if (screen !== "loader") {
-      return;
-    }
-
-    if (visualDebug.enabled) {
-      return;
-    }
-
-    const reducedMotion =
-      window.matchMedia(
-        "(prefers-reduced-motion: reduce)",
-      ).matches;
-
-    const animationScale =
-      reducedMotion ? 0.01 : 1;
-
-    const context =
-      gsap.context(() => {
-        const timeline =
-          gsap.timeline({
-            onComplete: () => {
-              setScreen("intro");
-            },
-          });
-
-        const letters =
-          lettersRef.current?.children;
-
-        if (letters?.length) {
-          timeline.fromTo(
-            letters,
-            {
-              yPercent: 112,
-              opacity: 0,
-            },
-            {
-              yPercent: 0,
-              opacity: 1,
-              duration:
-                0.72 *
-                animationScale,
-              stagger:
-                0.065 *
-                animationScale,
-              ease: "power3.out",
-            },
-          );
-        }
-
-        timeline
-          .fromTo(
-            loadingRef.current,
-            {
-              opacity: 0,
-            },
-            {
-              opacity: 1,
-              duration:
-                0.36 *
-                animationScale,
-              ease: "power2.out",
-            },
-            "-=0.22",
-          )
-          .to(
-            {},
-            {
-              duration:
-                0.65 *
-                animationScale,
-            },
-          )
-          .to(
-            loaderRef.current,
-            {
-              opacity: 0,
-              duration:
-                0.58 *
-                animationScale,
-              ease: "power2.inOut",
-            },
-          );
-      }, loaderRef);
-
-    return () => {
-      context.revert();
-    };
-  }, [screen, visualDebug.enabled]);
-
   async function configureAudio(
     enabled: boolean,
     request: number,
@@ -507,89 +406,15 @@ function App() {
       }
     >
       {/* =====================================
-          LOADER
+          PORTAL DO SANTUÁRIO
+          (substitui o loader e a intro)
       ====================================== */}
 
-      {screen === "loader" && (
-        <section
-          ref={loaderRef}
-          className="loader"
-          data-testid="visual-loader"
-        >
-          <div
-            ref={lettersRef}
-            className="unseen-mark unseen-mark--loader"
-            aria-label="Unseen"
-            role="img"
-          >
-            <span>U</span>
-            <span>N</span>
-            <span>S</span>
-            <span>E</span>
-            <span>E</span>
-            <span>N</span>
-          </div>
-
-          <div
-            ref={loadingRef}
-            className="loader__status"
-          >
-            (Loading)
-          </div>
-        </section>
-      )}
-
-      {/* =====================================
-          INTRO
-      ====================================== */}
-
-      {screen === "intro" && (
-        <section className="intro" data-testid="visual-intro">
-          <div
-            className="unseen-mark unseen-mark--intro"
-            aria-label="Giovanna Duarte Portfolio"
-            role="img"
-          >
-            <span>U</span>
-            <span>N</span>
-            <span>S</span>
-            <span>E</span>
-            <span>E</span>
-            <span>N</span>
-          </div>
-
-          <div className="intro__content">
-            <p className="intro__name">
-              Giovanna Duarte
-            </p>
-
-            <p className="intro__description">
-              Engenharia de software, design e experiências digitais construídas entre tecnologia, movimento, água e imaginação.
-            </p>
-
-            <div className="intro__actions">
-              <button
-                type="button"
-                className="text-button"
-                onClick={() =>
-                  enterSite(true)
-                }
-              >
-                Enter
-              </button>
-
-              <button
-                type="button"
-                className="text-button"
-                onClick={() =>
-                  enterSite(false)
-                }
-              >
-                Enter without audio
-              </button>
-            </div>
-          </div>
-        </section>
+      {(screen === "loader" || screen === "intro") && (
+        <SanctuaryPortal
+          startReady={screen === "intro"}
+          onEnter={enterSite}
+        />
       )}
 
       {/* =====================================
@@ -718,8 +543,8 @@ function App() {
                   partner for your project?
                 </p>
 
-                <a href="mailto:projects@unseen.co">
-                  projects@unseen.co
+                <a href={`mailto:${CONTACT.email}`}>
+                  {CONTACT.email}
                 </a>
               </div>
             </div>
@@ -879,14 +704,14 @@ function App() {
                   <p>
                     we look forward to hearing from you
                   </p>
-                  <a href="mailto:projects@unseen.co">
-                    projects@unseen.co
+                  <a href={`mailto:${CONTACT.email}`}>
+                    {CONTACT.email}
                   </a>
-                  <a href="tel:+441179226892">
-                    (+44) 0117 922 6892
+                  <a href={CONTACT.phoneHref}>
+                    {CONTACT.phone}
                   </a>
                   <p className="section-overlay__address">
-                    Brasília · Brasil
+                    {CONTACT.location}
                   </p>
                 </div>
               ) : (
