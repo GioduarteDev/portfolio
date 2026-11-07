@@ -258,6 +258,45 @@ class SceneTransition {
   // RENDER
   // =====================================================
 
+  /** Alvo em que as cenas são desenhadas (os shaders dependem dele ao compilar). */
+  get sceneTarget() {
+    return this.finalTarget;
+  }
+
+  /** Compila em segundo plano uma cena que será desenhada por esta transição. */
+  async precompileScene(
+    renderer: THREE.WebGLRenderer,
+    scene: THREE.Scene,
+    camera: THREE.Camera,
+  ) {
+    const previousTarget = renderer.getRenderTarget();
+    renderer.setRenderTarget(this.finalTarget);
+    try {
+      await renderer.compileAsync(scene, camera);
+    } finally {
+      renderer.setRenderTarget(previousTarget);
+    }
+  }
+
+  /** Compila em segundo plano os shaders do mergulho e do pós-processamento. */
+  async precompile(renderer: THREE.WebGLRenderer) {
+    const previousTarget = renderer.getRenderTarget();
+    const previousMaterial = this.transitionQuad.material;
+    try {
+      renderer.setRenderTarget(this.finalTarget);
+      for (const material of [this.transitionMaterial, this.navigationMaterial]) {
+        this.transitionQuad.material = material;
+        await renderer.compileAsync(this.transitionScene, this.transitionCamera);
+      }
+      renderer.setRenderTarget(null);
+      await renderer.compileAsync(this.postProcessScene, this.transitionCamera);
+      await renderer.compileAsync(this.diveParticles.scene, this.transitionCamera);
+    } finally {
+      this.transitionQuad.material = previousMaterial;
+      renderer.setRenderTarget(previousTarget);
+    }
+  }
+
   render(
     renderer: THREE.WebGLRenderer,
     homeScene: THREE.Scene,

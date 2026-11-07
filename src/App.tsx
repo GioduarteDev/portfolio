@@ -95,6 +95,11 @@ function App() {
         : "home",
     );
 
+  // progresso real da preparação da caverna 3D, mostrado no portal
+  const [sceneProgress, setSceneProgress] = useState(0);
+  // o portal continua na tela por um instante depois de entrar, para sumir com fade
+  const [portalLeaving, setPortalLeaving] = useState(false);
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [worldSelection, setWorldSelection] =
     useState<WorldSelection | null>(null);
@@ -294,6 +299,8 @@ function App() {
     setSceneSection(requestedScene);
     setAudioEnabled(withAudio);
     setScreen("home");
+    setPortalLeaving(true);
+    window.setTimeout(() => setPortalLeaving(false), 1000);
     window.history.replaceState(
       { section: requestedSection, projectSlug: requestedSlug },
       "",
@@ -410,9 +417,11 @@ function App() {
           (substitui o loader e a intro)
       ====================================== */}
 
-      {(screen === "loader" || screen === "intro") && (
+      {(screen !== "home" || portalLeaving) && (
         <SanctuaryPortal
+          progress={sceneProgress}
           startReady={screen === "intro"}
+          leaving={portalLeaving}
           onEnter={enterSite}
         />
       )}
@@ -421,9 +430,10 @@ function App() {
           EXPERIENCE
       ====================================== */}
 
-      {screen === "home" && (
+      {/* a caverna monta desde o início, por trás do portal */}
         <section
           className="home-placeholder"
+          inert={screen !== "home"}
           data-scene="home"
           data-route={section}
         >
@@ -443,6 +453,8 @@ function App() {
             onProjectSelect={(project) =>
               navigateToProject(project.slug)
             }
+            active={screen === "home"}
+            onLoadProgress={setSceneProgress}
           />
 
           {/* =================================
@@ -839,7 +851,6 @@ function App() {
 
           <ExperienceCursor />
         </section>
-      )}
     </main>
   );
 }

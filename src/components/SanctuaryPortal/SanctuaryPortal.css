@@ -123,6 +123,7 @@
 
 
 /* no site: o portal cobre a tela inteira por cima de tudo */
-.portal { position: fixed; inset: 0; z-index: 100; height: auto; }
+.portal { position: fixed; inset: 0; z-index: 10000; height: auto; }
+.portal.saindo { opacity: 0; pointer-events: none; transition: opacity .9s ease, background var(--troca) ease, color var(--troca) ease; }
 .portal, .portal * { box-sizing: border-box; }
 .portal [hidden] { display: none !important; }

@@ -12,16 +12,19 @@ import { montarPortal, type ControlePortal } from "./portalCena";
  *
  * - `progress` (0–1): progresso real. Sem ele, o portal anima sozinho.
  * - `startReady`: abre já amanhecido (usado pelo modo de depuração).
+ * - `leaving`: some com fade depois que a pessoa entra.
  * - `onEnter(comSom)`: chamado quando a pessoa escolhe entrar.
  */
 
 interface SanctuaryPortalProps {
   progress?: number;
   startReady?: boolean;
+  /** Depois de entrar: o portal some com fade enquanto a caverna aparece. */
+  leaving?: boolean;
   onEnter: (withAudio: boolean) => void;
 }
 
-function SanctuaryPortal({ progress, startReady = false, onEnter }: SanctuaryPortalProps) {
+function SanctuaryPortal({ progress, startReady = false, leaving = false, onEnter }: SanctuaryPortalProps) {
   const rootRef = useRef<HTMLElement>(null);
   const controlRef = useRef<ControlePortal | null>(null);
   const onEnterRef = useRef(onEnter);
@@ -55,7 +58,7 @@ function SanctuaryPortal({ progress, startReady = false, onEnter }: SanctuaryPor
   return (
     <section
       ref={rootRef}
-      className="portal"
+      className={leaving ? "portal saindo" : "portal"}
       data-testid="visual-loader"
       aria-label="Portal do Santuário"
     >

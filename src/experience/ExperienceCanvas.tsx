@@ -70,6 +70,10 @@ type ExperienceCanvasProps = {
   onSceneSectionChange: (section: ExperienceSceneSection) => void;
   onWorldSelectionChange: (selection: WorldSelection | null) => void;
   onProjectSelect: (project: ProjectItem) => void;
+  /** Enquanto falso, a cena só se prepara por trás do portal (sem rolagem nem tempo correndo). */
+  active?: boolean;
+  /** Progresso real da preparação da cena (0–1). Chega a 1 depois do primeiro quadro. */
+  onLoadProgress?: (progress: number) => void;
 };
 
 const ExperienceCanvas = forwardRef<
@@ -82,7 +86,12 @@ const ExperienceCanvas = forwardRef<
   onSceneSectionChange,
   onWorldSelectionChange,
   onProjectSelect,
+  active = true,
+  onLoadProgress,
 }, ref) {
+  const activeRef = useRef(active);
+  const onLoadProgressRef = useRef(onLoadProgress);
+
   const containerRef =
     useRef<HTMLDivElement>(null);
 
@@ -125,6 +134,20 @@ const ExperienceCanvas = forwardRef<
     onWorldSelectionChange,
     onProjectSelect,
   ]);
+
+  useLayoutEffect(() => {
+    onLoadProgressRef.current = onLoadProgress;
+  }, [onLoadProgress]);
+
+  useEffect(() => {
+    activeRef.current = active;
+    if (active) {
+      scrollManagerRef.current?.setEnabled(
+        initialSectionRef.current !== "world" &&
+          !readVisualDebugState().paused,
+      );
+    }
+  }, [active]);
 
   useImperativeHandle(
     ref,
@@ -398,6 +421,7 @@ const ExperienceCanvas = forwardRef<
     if (debugController) {
       applyVisualDebugState(debugController.state);
     }
+    if (!activeRef.current) scroll.setEnabled(false);
 
     // ===================================================
     // POINTER
@@ -583,12 +607,21 @@ const ExperienceCanvas = forwardRef<
     // ===================================================
 
     const frameInterval = 1000 / quality.maxFps;
+    let firstFrameDone = false;
     const animate = (frameTime = performance.now()) => {
       if (frameTime - lastFrameTime < frameInterval) {
         animationFrame = requestAnimationFrame(animate);
         return;
       }
       lastFrameTime = frameTime;
+
+      // Por trás do portal: o primeiro quadro já foi desenhado, então só esperamos.
+      if (firstFrameDone && !activeRef.current) {
+        clock.update(frameTime);
+        animationFrame = requestAnimationFrame(animate);
+        return;
+      }
+      firstFrameDone = true;
 
       clock.update(frameTime);
       const deltaSeconds =
@@ -1235,7 +1268,41 @@ const ExperienceCanvas = forwardRef<
         );
     };
 
-    animate();
+    // ===================================================
+    // PREPARAÇÃO
+    //
+    // Compila os shaders em segundo plano (KHR_parallel_shader_compile) enquanto
+    // o portal está na tela. Sem isso, o primeiro quadro compilava tudo de uma vez
+    // e a página ficava travada, no Windows por até minutos.
+    // ===================================================
+
+    let disposed = false;
+    const reportProgress = (value: number) => {
+      if (!disposed) onLoadProgressRef.current?.(value);
+    };
+    const warmUpSteps: [number, () => Promise<unknown>][] = [
+      [0.45, () => home.precompile(renderer, homeCamera, transition.sceneTarget)],
+      [0.62, () => transition.precompileScene(renderer, projects.scene, projectsCamera)],
+      [0.72, () => transition.precompileScene(renderer, contact.scene, contactCamera)],
+      [0.8, () => transition.precompileScene(renderer, world.scene, worldCamera)],
+      [0.88, () => transition.precompile(renderer)],
+    ];
+    const warmUp = async () => {
+      reportProgress(0.12);
+      for (const [progress, step] of warmUpSteps) {
+        if (disposed) return;
+        try {
+          await step();
+        } catch (error) {
+          console.warn("Shader warm-up step failed; it will compile on first use.", error);
+        }
+        reportProgress(progress);
+      }
+      if (disposed) return;
+      animate();
+      requestAnimationFrame(() => reportProgress(1));
+    };
+    void warmUp();
 
     // ===================================================
     // RESIZE
@@ -1324,6 +1391,7 @@ const ExperienceCanvas = forwardRef<
     // ===================================================
 
     return () => {
+      disposed = true;
       debugHud?.dispose();
       cancelAnimationFrame(
         animationFrame,

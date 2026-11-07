@@ -811,6 +811,44 @@ class HomeScene {
     this.updateDawnClouds(this.motion.time.value);
     this.particles.material.uniforms.uCall.value = anticipation;
   }
+  /**
+   * Compila os shaders da caverna em segundo plano, antes do primeiro quadro.
+   * Cobre as duas passadas: a normal e a de captura (reflexo/refração, sem sombra
+   * e sem a água), que usam programas diferentes. Assim o primeiro quadro não trava.
+   */
+  async precompile(
+    renderer: THREE.WebGLRenderer,
+    camera: THREE.Camera,
+    target: THREE.WebGLRenderTarget,
+  ) {
+    const previousTarget = renderer.getRenderTarget();
+    renderer.setRenderTarget(target);
+    try {
+      await renderer.compileAsync(this.scene, camera);
+    } finally {
+      renderer.setRenderTarget(previousTarget);
+    }
+
+    const waterVisible = this.water.visible;
+    const shadowsEnabled = renderer.shadowMap.enabled;
+    this.water.visible = false;
+    renderer.shadowMap.enabled = false;
+    for (const { mesh, capture } of this.captureMaterials) {
+      mesh.material = capture;
+    }
+    renderer.setRenderTarget(this.refractionTarget);
+    try {
+      await renderer.compileAsync(this.scene, camera);
+    } finally {
+      for (const { mesh, primary } of this.captureMaterials) {
+        mesh.material = primary;
+      }
+      this.water.visible = waterVisible;
+      renderer.shadowMap.enabled = shadowsEnabled;
+      renderer.setRenderTarget(previousTarget);
+    }
+  }
+
   resizeReflection(
     width: number,
     height: number,
